@@ -38,14 +38,21 @@ function describeOperation(name, args) {
 async function isNewPath(fs, path) { if (fs === undefined || path === null || path === '') return false; try { const info = await fs.lstat(path); return info === undefined } catch (e) { return false } }
 function makeMarkerSignal(subprocess) {
   if (subprocess === undefined) return null
-  let cmdPath = null
+  let nodePath = null
   return function (pending) {
     try {
+      const script = pending
+        ? "try{require('fs').writeFileSync(require('path').join(process.env.TEMP || process.env.TMP || '.', 'dsh-question-pending'), '1')}catch(e){}"
+        : "try{require('fs').unlinkSync(require('path').join(process.env.TEMP || process.env.TMP || '.', 'dsh-question-pending'))}catch(e){}"
       const run = function (resolved) {
-        const argv = pending ? [resolved, '/c', 'echo 1 > %TEMP%\\dsh-question-pending'] : [resolved, '/c', 'del %TEMP%\\dsh-question-pending']
-        subprocess.spawn({ argv: argv, cwd: 'C:\\Users\\WZX', stdio: { stdin: 'ignore', stdout: 'inherit', stderr: 'inherit' }, graceMs: 5000 })
+        subprocess.spawn({ argv: [resolved, '-e', script], cwd: 'C:\\Users\\WZX', stdio: { stdin: 'ignore', stdout: { maxBytes: 1024 }, stderr: { maxBytes: 1024 } }, graceMs: 5000 })
       }
-      if (cmdPath === null) { cmdPath = subprocess.resolveExecutable('cmd.exe'); cmdPath.then(run).catch(function () {}) } else { run(cmdPath) }
+      if (nodePath === null) {
+        nodePath = subprocess.resolveExecutable('node')
+        nodePath.then(function (resolved) { nodePath = resolved; run(resolved) }).catch(function () {})
+      } else {
+        run(nodePath)
+      }
     } catch (e) {}
   }
 }
@@ -354,38 +361,6 @@ function applyUsage(ctx) {
   })
 }
 
-// ===== 神奇小开关：DSV4 Pro（满血）+ 极简模式 =====
-const MAGIC_PROVIDER = 'deepseek-official'
-const MAGIC_MODEL = 'deepseek-v4-pro'
-const NORMAL_MODEL = 'deepseek-v4-flash'
-function applyMagicSwitch(ctx) {
-  const settings = ctx.get('settings')
-  const agentDefaultModel = ctx.get('agentDefaultModel')
-  if (settings === undefined || agentDefaultModel === undefined) return
-  harness.handle('get-magic-switch', async () => {
-    try {
-      const presetSettings = settings.get('agent-presets')
-      const preset = (presetSettings && presetSettings.default) || 'standard'
-      const sel = agentDefaultModel.currentSelection()
-      const model = (sel && sel.model) || ''
-      return { ok: true, preset: preset, model: model, on: (preset === 'minimal' && model === MAGIC_MODEL) }
-    } catch (error) { return { ok: false, error: String((error && error.message) || error) } }
-  })
-  harness.handle('set-magic-switch', async (args) => {
-    try {
-      const on = args && args.on
-      if (on) {
-        await settings.update('agent-presets', { default: 'minimal' })
-        await agentDefaultModel.saveSelection({ provider: MAGIC_PROVIDER, model: MAGIC_MODEL })
-      } else {
-        await settings.update('agent-presets', { default: 'standard' })
-        await agentDefaultModel.saveSelection({ provider: MAGIC_PROVIDER, model: NORMAL_MODEL })
-      }
-      return { ok: true }
-    } catch (error) { return { ok: false, error: String((error && error.message) || error) } }
-  })
-}
-
 // ===== 意见区：提交反馈到 GitHub Issue =====
 const FEEDBACK_REPO = 'WZX123188/deepseekharness-'
 function applyFeedback(ctx) {
@@ -419,7 +394,6 @@ return {
     applyTools(ctx)
     applyPlugins(ctx)
     applyProjects(ctx)
-    applyMagicSwitch(ctx)
     applyFeedback(ctx)
   },
 }

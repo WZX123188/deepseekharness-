@@ -79,6 +79,23 @@ function ensureFeatures(cb) {
       const s = path.join(bootSrc, files[i])
       if (fs.existsSync(s)) fs.copyFileSync(s, path.join(bootDst, files[i]))
     }
+    // 把「神奇小开关」preset 装进用户 agent-presets 根（纯配置文件，非插件）
+    const presetsSrc = path.join(__dirname, 'presets')
+    const presetsDst = path.join(home, '.dsh', '.agent-presets')
+    if (fs.existsSync(presetsSrc)) {
+      const names = fs.readdirSync(presetsSrc)
+      for (let i = 0; i < names.length; i++) {
+        const srcDir = path.join(presetsSrc, names[i])
+        const dstDir = path.join(presetsDst, names[i])
+        if (!fs.statSync(srcDir).isDirectory()) continue
+        fs.mkdirSync(dstDir, { recursive: true })
+        const pFiles = fs.readdirSync(srcDir)
+        for (let j = 0; j < pFiles.length; j++) {
+          const s = path.join(srcDir, pFiles[j])
+          if (fs.statSync(s).isFile()) fs.copyFileSync(s, path.join(dstDir, pFiles[j]))
+        }
+      }
+    }
     const pkgPath = path.join(profileDir, 'package.json')
     if (!fs.existsSync(pkgPath)) {
       fs.mkdirSync(profileDir, { recursive: true })
