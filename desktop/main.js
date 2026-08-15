@@ -9,7 +9,8 @@ const path = require('path')
 // 优先用打包进去的 Node 运行时，缺失时回退到系统 Node
 const BUNDLED_NODE = path.join(__dirname, 'node', 'node.exe')
 const NODE = fs.existsSync(BUNDLED_NODE) ? BUNDLED_NODE : 'C:\\Program Files\\nodejs\\node.exe'
-const DSH_BIN = 'C:\\Users\\WZX\\AppData\\Roaming\\npm\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js'
+const DSH_BIN = path.join(process.env.APPDATA || 'C:\\Users\\WZX\\AppData\\Roaming', 'npm', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
+const NPM_CLI = path.join(__dirname, 'node', 'node_modules', 'npm', 'bin', 'npm-cli.js')
 const PORT = 3180
 const BASE = 'http://127.0.0.1:' + PORT
 const MARKER = path.join(os.tmpdir(), 'dsh-question-pending')
@@ -41,6 +42,25 @@ function startDsh() {
     env: process.env,
   })
   dshProc.on('exit', function () { dshProc = null })
+}
+
+// 首次运行：若核心组件（DSH）未安装，用内置 Node/npm 自动安装（走国内镜像）
+function ensureDsh(cb) {
+  if (fs.existsSync(DSH_BIN)) return cb(null)
+  console.log('[dsh-client] 首次运行：正在安装核心组件（需联网，约 1-2 分钟）…')
+  let proc
+  try {
+    proc = spawn(NODE, [NPM_CLI, 'install', '-g', '@deepseek-ai/dsh', '--registry', 'https://registry.npmmirror.com'], {
+      cwd: 'C:\\Users\\WZX',
+      stdio: 'ignore',
+      env: process.env,
+    })
+  } catch (e) { return cb(e) }
+  proc.on('exit', function (code) {
+    if (code === 0 && fs.existsSync(DSH_BIN)) cb(null)
+    else cb(new Error('核心组件安装失败（code ' + code + '）'))
+  })
+  proc.on('error', function (e) { cb(e) })
 }
 
 function showWin() {
@@ -121,17 +141,24 @@ if (!gotLock) {
 
   app.whenReady().then(function () {
     try { fs.unlinkSync(MARKER) } catch (e) {}  // 清残留标记，防止启动即置顶
-    startDsh()
     createTray()
     try { globalShortcut.register('CommandOrControl+Alt+D', function () { toggleWin() }) } catch (e) {}
-    waitForServer(function (err) {
+    ensureDsh(function (err) {
       if (err) {
-        console.error('[dsh-client] ' + err.message)
+        console.error('[dsh-client] ' + (err && err.message || err))
         app.quit()
         return
       }
-      createWindow()
-      pollMarker()
+      startDsh()
+      waitForServer(function (e2) {
+        if (e2) {
+          console.error('[dsh-client] ' + e2.message)
+          app.quit()
+          return
+        }
+        createWindow()
+        pollMarker()
+      })
     })
   })
 
