@@ -21,6 +21,13 @@ var CSS = [
   '.dsh-err{color:#e5484d;font-size:13px}',
   '.dsh-ok{color:#30a46c;font-size:13px}',
   '.dsh-muted{opacity:.6;font-size:13px;line-height:1.5}',
+  '.dsh-search{width:100%;padding:8px 12px;border-radius:8px;border:1px solid rgba(127,127,127,.3);background:transparent;color:inherit;margin-bottom:10px}',
+  '.dsh-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}',
+  '.dsh-tab{padding:6px 14px;border-radius:16px;border:1px solid rgba(127,127,127,.25);cursor:pointer;font-size:13px;background:transparent;color:inherit}',
+  '.dsh-tab.active{background:' + BLUE + ';color:#fff;border-color:' + BLUE + '}',
+  '.dsh-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:12px}',
+  '.dsh-toolcard{border:1px solid rgba(127,127,127,.16);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:6px}',
+  '.dsh-toolname{font-weight:600;font-size:14px}',
 ].join('\n')
 
 function BalanceSection() {

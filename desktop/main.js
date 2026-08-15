@@ -36,9 +36,10 @@ function waitForServer(cb, tries) {
 }
 
 function startDsh() {
+  const logFd = fs.openSync(path.join(__dirname, 'dsh.log'), 'a')
   dshProc = spawn(NODE, [DSH_BIN, 'web', '--port', String(PORT)], {
     cwd: 'C:\\Users\\WZX',
-    stdio: 'ignore',
+    stdio: ['ignore', logFd, logFd],
     env: process.env,
   })
   dshProc.on('exit', function () { dshProc = null })
