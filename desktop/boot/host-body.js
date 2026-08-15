@@ -195,17 +195,17 @@ function applyUpdate(ctx) {
 
 // ===== Tool 市场（MCP 服务器；已去掉与内置能力重复的：文件读写/网络搜索/网页抓取/本地git） =====
 const TOOLS = [
-  { id: 'e2b', name: 'E2B Code Interpreter', category: '代码沙盒', desc: '云端隔离沙盒运行 Python/代码（区别于本地命令）', note: '来自 E2B', pkg: '@e2b/mcp-server' },
-  { id: 'puppeteer', name: 'Puppeteer', category: '浏览器自动化', desc: '无头浏览器自动化、网页交互', note: '来自 Anthropic', pkg: '@modelcontextprotocol/server-puppeteer' },
-  { id: 'playwright', name: 'Playwright', category: '浏览器自动化', desc: '浏览器自动化与测试', note: '来自 微软', pkg: '@playwright/mcp' },
-  { id: 'github', name: 'GitHub', category: '代码与仓库', desc: '操作 GitHub 仓库、Issue、PR', note: '来自 GitHub', pkg: '@modelcontextprotocol/server-github' },
-  { id: 'postgres', name: 'PostgreSQL', category: '数据库', desc: '查询 PostgreSQL 数据库', note: '来自 Anthropic', pkg: '@modelcontextprotocol/server-postgres' },
-  { id: 'sqlite', name: 'SQLite', category: '数据库', desc: '查询 SQLite 数据库', note: '来自 Anthropic', pkg: '@modelcontextprotocol/server-sqlite' },
-  { id: 'memory', name: 'Memory', category: '知识记忆', desc: '持久化知识图谱记忆', note: '来自 Anthropic', pkg: '@modelcontextprotocol/server-memory' },
-  { id: 'time', name: 'Time', category: '实用工具', desc: '时间与时区查询', note: '来自 Anthropic', pkg: '@modelcontextprotocol/server-time' },
-  { id: 'slack', name: 'Slack', category: '团队协作', desc: '读写 Slack 频道、消息', note: '来自 Anthropic', pkg: '@modelcontextprotocol/server-slack' },
-  { id: 'notion', name: 'Notion', category: '知识管理', desc: '读写 Notion 页面与数据库', note: '来自 Notion', pkg: '@notionhq/notion-mcp-server' },
-  { id: 'sentry', name: 'Sentry', category: '错误监控', desc: '查询 Sentry 错误与性能数据', note: '来自 Sentry', pkg: '@modelcontextprotocol/server-sentry' },
+  { id: 'e2b', name: 'E2B Code Interpreter', category: '代码沙盒', desc: '云端隔离沙盒运行 Python/代码（区别于本地命令）', note: '来自 E2B', pkg: '@e2b/mcp-server', config: '需在 e2b.dev 注册并生成 API Key，设为环境变量 E2B_API_KEY 后，代码才能在云端沙盒里跑。' },
+  { id: 'puppeteer', name: 'Puppeteer', category: '浏览器自动化', desc: '无头浏览器自动化、网页交互', note: '来自 Anthropic', pkg: '@modelcontextprotocol/server-puppeteer', config: '' },
+  { id: 'playwright', name: 'Playwright', category: '浏览器自动化', desc: '浏览器自动化与测试', note: '来自 微软', pkg: '@playwright/mcp', config: '' },
+  { id: 'github', name: 'GitHub', category: '代码与仓库', desc: '操作 GitHub 仓库、Issue、PR', note: '来自 GitHub', pkg: '@modelcontextprotocol/server-github', config: '需在 GitHub → Settings → Developer settings → Personal access tokens 生成令牌，设为环境变量 GITHUB_PERSONAL_ACCESS_TOKEN。' },
+  { id: 'postgres', name: 'PostgreSQL', category: '数据库', desc: '查询 PostgreSQL 数据库', note: '来自 Anthropic', pkg: '@modelcontextprotocol/server-postgres', config: '需数据库连接串：设为环境变量 DATABASE_URL（形如 postgresql://用户名:密码@主机:端口/库名）。' },
+  { id: 'sqlite', name: 'SQLite', category: '数据库', desc: '查询 SQLite 数据库', note: '来自 Anthropic', pkg: '@modelcontextprotocol/server-sqlite', config: '需指定本地数据库文件路径：启动时通过 --db-path 传入，或设置 SQLITE_PATH 环境变量。' },
+  { id: 'memory', name: 'Memory', category: '知识记忆', desc: '持久化知识图谱记忆', note: '来自 Anthropic', pkg: '@modelcontextprotocol/server-memory', config: '需指定记忆存储文件路径：启动时通过 --path 传入；不指定则用默认 ~/.memory.json。' },
+  { id: 'time', name: 'Time', category: '实用工具', desc: '时间与时区查询', note: '来自 Anthropic', pkg: '@modelcontextprotocol/server-time', config: '' },
+  { id: 'slack', name: 'Slack', category: '团队协作', desc: '读写 Slack 频道、消息', note: '来自 Anthropic', pkg: '@modelcontextprotocol/server-slack', config: '需 Slack 机器人 Token：设为环境变量 SLACK_BOT_TOKEN（配合 SLACK_TEAM_ID）。' },
+  { id: 'notion', name: 'Notion', category: '知识管理', desc: '读写 Notion 页面与数据库', note: '来自 Notion', pkg: '@notionhq/notion-mcp-server', config: '需 Notion 集成 Token：在 notion.so/my-integrations 创建集成，把 Token 通过 OPENAPI_MCP_HEADERS 传入。' },
+  { id: 'sentry', name: 'Sentry', category: '错误监控', desc: '查询 Sentry 错误与性能数据', note: '来自 Sentry', pkg: '@modelcontextprotocol/server-sentry', config: '需 Sentry Auth Token：在 sentry.io 生成，设为环境变量 SENTRY_TOKEN。' },
 ]
 
 // ===== Plugin 市场（DSH 插件；已去掉与内置重复的：联网搜索/终端/工作流） =====
@@ -260,7 +260,7 @@ function applyMarket(ctx, kind, items) {
       const stateMap = market[plural] || {}
       const list = items.map(function (t) {
         const isInst = Object.prototype.hasOwnProperty.call(installed, t.pkg)
-        return { id: t.id, name: t.name, category: t.category, desc: t.desc, note: t.note, pkg: t.pkg, installed: isInst, enabled: isInst && stateMap[t.id] !== false }
+        return { id: t.id, name: t.name, category: t.category, desc: t.desc, note: t.note, pkg: t.pkg, config: t.config || '', installed: isInst, enabled: isInst && stateMap[t.id] !== false }
       })
       const categories = []
       const order = []

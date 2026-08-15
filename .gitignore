@@ -13,3 +13,12 @@ desktop/release/
 desktop/install.log
 desktop/build.log
 desktop/node/
+
+# 敏感：凭证 / 设置 / 本地状态（绝不能提交到仓库）
+.credentials.yaml
+settings.yaml
+dsh-client-*.json
+dsh-market.json
+.env
+.env.*
+*.local

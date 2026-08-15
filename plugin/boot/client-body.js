@@ -24,6 +24,9 @@ var CSS = [
   '.dsh-link:hover{text-decoration:underline}',
   '.dsh-muted{opacity:.6;font-size:13px;line-height:1.5}',
   '.dsh-note{opacity:.45;font-size:11px;line-height:1.5;color:inherit}',
+  '.dsh-configlink{color:' + BLUE + ';font-size:11px;cursor:pointer;background:none;border:none;padding:0;text-align:left}',
+  '.dsh-configlink:hover{text-decoration:underline}',
+  '.dsh-configbox{background:rgba(77,107,254,.08);border:1px solid rgba(77,107,254,.25);border-radius:8px;padding:8px 10px;font-size:12px;line-height:1.6;margin-top:6px;color:inherit}',
   '.dsh-search{width:100%;padding:8px 12px;border-radius:8px;border:1px solid rgba(127,127,127,.3);background:transparent;color:inherit;margin-bottom:10px}',
   '.dsh-input{background:transparent;border:1px solid rgba(127,127,127,.3);border-radius:8px;padding:8px 12px;color:inherit;font-size:13px;width:100%}',
   '.dsh-select{background:transparent;border:1px solid rgba(127,127,127,.3);border-radius:8px;padding:6px 10px;color:inherit;font-size:13px}',
@@ -216,6 +219,9 @@ function ToolsSection() {
   var b = React.useState(null)
   var busy = b[0]
   var setBusy = b[1]
+  var ex = React.useState(null)
+  var expandedId = ex[0]
+  var setExpandedId = ex[1]
   function load() {
     setState({ status: 'loading', cats: null, error: null })
     host.call('list-tools').then(function (res) {
@@ -229,6 +235,7 @@ function ToolsSection() {
     setBusy(args.id)
     host.call(key, args).then(function () { setBusy(null); load() }).catch(function () { setBusy(null); load() })
   }
+  function toggleExpand(id) { setExpandedId(expandedId === id ? null : id) }
   React.useEffect(function () { load() }, [])
 
   var body
@@ -246,7 +253,11 @@ function ToolsSection() {
                 el('div', { className: 'dsh-value' }, tool.name),
                 el('div', { className: 'dsh-muted' }, tool.desc),
                 el('div', { className: 'dsh-muted', style: { fontSize: '11px' } }, tool.note),
-                el('div', { className: 'dsh-muted', style: { fontSize: '11px' } }, tool.pkg)),
+                el('div', { className: 'dsh-muted', style: { fontSize: '11px' } }, tool.pkg),
+                tool.config
+                  ? el('button', { className: 'dsh-configlink', onClick: function () { toggleExpand(tool.id) } }, expandedId === tool.id ? '收起配置说明 ▲' : '⚙ 需配置 · 点击查看详情')
+                  : el('span', { className: 'dsh-muted', style: { fontSize: '11px' } }, '无需额外配置'),
+                expandedId === tool.id && tool.config ? el('div', { className: 'dsh-configbox' }, tool.config) : null),
               tool.installed
                 ? el('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-end' } },
                     el('span', { className: tool.enabled ? 'dsh-ok' : 'dsh-muted' }, tool.enabled ? '启用中' : '已禁用'),
