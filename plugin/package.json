@@ -1,0 +1,8 @@
+{
+  "name": "dsh-client-gate",
+  "version": "1.0.0",
+  "description": "DSH 客户端权限门：读取放行，写/改/删需勾选同意（G 盘自动放行）",
+  "type": "module",
+  "main": "index.js",
+  "license": "MIT"
+}
