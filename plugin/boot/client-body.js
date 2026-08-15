@@ -236,10 +236,10 @@ function ToolsSection() {
 
   return el('div', { className: 'dsh-page' },
     el('div', { className: 'dsh-head' },
-      el('h2', { className: 'dsh-h2' }, '工具市场'),
+      el('h2', { className: 'dsh-h2' }, 'Tool 市场'),
       el('button', { className: 'dsh-btn ghost', onClick: load }, '刷新')),
     body,
-    el('div', { className: 'dsh-muted' }, '点击「安装」即可一键安装工具；均为官方/大厂可信来源。'))
+    el('div', { className: 'dsh-muted' }, '点击「安装」即可一键安装，来源标注见每条工具。'))
 }
 
 function PluginsSection() {
@@ -295,7 +295,7 @@ function PluginsSection() {
 
   return el('div', { className: 'dsh-page' },
     el('div', { className: 'dsh-head' },
-      el('h2', { className: 'dsh-h2' }, '插件市场'),
+      el('h2', { className: 'dsh-h2' }, 'Plugin 市场'),
       el('button', { className: 'dsh-btn ghost', onClick: load }, '刷新')),
     body,
     el('div', { className: 'dsh-muted' }, '插件 = 扩展 harness 本身的能力（区别于工具）；均为官方可信来源。'))
@@ -366,7 +366,7 @@ function GuideSection() {
       el('div', { className: 'dsh-muted' }, '· 权限门：修改 / 删除文件时勾选「同意」并确认后放行；读取默认放行。'),
       el('div', { className: 'dsh-muted' }, '· 余额 / 用量：查看 DeepSeek 账户余额。'),
       el('div', { className: 'dsh-muted' }, '· 检查更新：一键更新到最新版。'),
-      el('div', { className: 'dsh-muted' }, '· 工具市场：一键安装热门工具。')),
+      el('div', { className: 'dsh-muted' }, '· Tool 市场：一键安装热门工具。')),
     el('div', { className: 'dsh-card' },
       el('div', { className: 'dsh-h2', style: { marginBottom: '8px' } }, '快捷操作'),
       el('div', { className: 'dsh-muted' }, '· Ctrl+Alt+D：呼出 / 隐藏窗口。'),
@@ -451,13 +451,13 @@ return {
     })
     slots.inject('settings.section', function () {
       return slots.register(
-        { name: 'settings.section', id: 'dsh-tools', order: 35, label: '工具市场' },
+        { name: 'settings.section', id: 'dsh-tools', order: 35, label: 'Tool 市场' },
         function () { return React.createElement(ToolsSection) }
       )
     })
     slots.inject('settings.section', function () {
       return slots.register(
-        { name: 'settings.section', id: 'dsh-plugins', order: 36, label: '插件市场' },
+        { name: 'settings.section', id: 'dsh-plugins', order: 36, label: 'Plugin 市场' },
         function () { return React.createElement(PluginsSection) }
       )
     })
@@ -478,7 +478,7 @@ return {
       return slots.register(
         { name: 'sidebar.footer.action', id: 'dsh-features', order: 5, label: '功能' },
         function () {
-          return el('button', { title: '功能都在 设置 里：项目 / API 管理 / 权限 / 余额 / 工具市场 / 插件市场 / 检查更新 / 使用指南', style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: '6px 10px', borderRadius: '8px', fontSize: '13px', color: 'inherit' } }, '功能')
+          return el('button', { title: '功能都在 设置 里：项目 / API 管理 / 权限 / 余额 / Tool 市场 / Plugin 市场 / 检查更新 / 使用指南', style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: '6px 10px', borderRadius: '8px', fontSize: '13px', color: 'inherit' } }, '功能')
         }
       )
     })

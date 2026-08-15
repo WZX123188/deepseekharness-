@@ -1,5 +1,4 @@
-// 启动引导：每个会话创建时，用 dynamicCordisRunner 自动 define+run 全部功能。
-// 自动批准客户端，避免卡在 awaiting-approval。
+// 启动引导：每个会话创建时，自动 define + run（自动批准客户端，等价用户点批准）
 import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
@@ -16,7 +15,7 @@ export function apply(ctx) {
   if (runner === undefined) return
   const loaded = new Set()
 
-  function loadForAgent(agent) {
+  async function loadForAgent(agent) {
     const sid = agent && agent.id
     if (sid === undefined || loaded.has(sid)) return
     loaded.add(sid)
@@ -30,11 +29,19 @@ export function apply(ctx) {
         code: { host: hostCode, client: clientCode },
       })
       console.log('[dsh-boot] defined plugin=' + receipt.pluginId + ' pkg=' + receipt.packageId)
-      runner.runHostHalf(agent, receipt.pluginId, receipt.packageId, 'run', null, true).then(function (res) {
-        console.log('[dsh-boot] runHostHalf ok=' + (res && res.ok) + ' pluginRunId=' + (res && res.pluginRunId))
-      }).catch(function (e) { console.error('[dsh-boot] runHostHalf failed: ' + ((e && e.message) || e)) })
+      const res = await runner.run(agent, receipt.pluginId, receipt.packageId, 'run')
+      console.log('[dsh-boot] run status=' + (res && res.ok ? res.status : ('fail ' + (res && res.reason))))
+      if (res && res.ok && res.status === 'awaiting-approval') {
+        const insp = runner.inspectPlugin(agent, receipt.pluginId)
+        const approvalId = insp && insp.latestRun && insp.latestRun.approvalRequestId
+        console.log('[dsh-boot] approval id=' + approvalId)
+        if (approvalId) {
+          const hh = await runner.runHostHalf(agent, receipt.pluginId, receipt.packageId, 'run', approvalId, true)
+          console.log('[dsh-boot] runHostHalf ok=' + (hh && hh.ok) + ' runId=' + (hh && hh.pluginRunId))
+        }
+      }
     } catch (e) {
-      console.error('[dsh-boot] define failed: ' + ((e && e.message) || e))
+      console.error('[dsh-boot] load failed: ' + ((e && e.message) || e))
     }
   }
 

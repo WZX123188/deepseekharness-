@@ -186,28 +186,31 @@ function applyUpdate(ctx) {
   })
 }
 
-// ===== 工具市场（MCP 服务器，均为官方/大厂可信来源） =====
+// ===== Tool 市场（MCP 服务器，覆盖千问/豆包常见能力，来源写公司名） =====
 const TOOLS = [
-  { id: 'mcp-filesystem', name: 'Filesystem', category: '文件与系统', desc: '读写本地文件系统', note: '官方 MCP 参考服务器（Anthropic）', pkg: '@modelcontextprotocol/server-filesystem' },
-  { id: 'mcp-everything', name: 'Everything', category: '文件与系统', desc: 'Windows 文件快速搜索', note: '官方 MCP 参考服务器', pkg: '@modelcontextprotocol/server-everything' },
-  { id: 'mcp-fetch', name: 'Fetch', category: '网页抓取', desc: '抓取网页内容转 Markdown', note: '官方 MCP 参考服务器', pkg: '@modelcontextprotocol/server-fetch' },
-  { id: 'mcp-puppeteer', name: 'Puppeteer', category: '浏览器自动化', desc: '无头浏览器自动化、网页交互', note: '官方 MCP 参考服务器', pkg: '@modelcontextprotocol/server-puppeteer' },
-  { id: 'mcp-playwright', name: 'Playwright', category: '浏览器自动化', desc: '浏览器自动化与测试', note: '微软官方 Playwright MCP', pkg: '@playwright/mcp' },
-  { id: 'mcp-github', name: 'GitHub', category: '代码与仓库', desc: '操作 GitHub 仓库、Issue、PR', note: 'GitHub 官方 MCP', pkg: '@modelcontextprotocol/server-github' },
-  { id: 'mcp-git', name: 'Git', category: '代码与仓库', desc: '读取与操作本地 Git 仓库', note: '官方 MCP 参考服务器', pkg: '@modelcontextprotocol/server-git' },
-  { id: 'mcp-brave', name: 'Brave Search', category: '搜索', desc: 'Brave 网络搜索', note: 'Brave 官方 MCP', pkg: '@modelcontextprotocol/server-brave-search' },
-  { id: 'mcp-postgres', name: 'PostgreSQL', category: '数据库', desc: '查询 PostgreSQL 数据库', note: '官方 MCP 参考服务器', pkg: '@modelcontextprotocol/server-postgres' },
-  { id: 'mcp-sqlite', name: 'SQLite', category: '数据库', desc: '查询 SQLite 数据库', note: '官方 MCP 参考服务器', pkg: '@modelcontextprotocol/server-sqlite' },
-  { id: 'mcp-memory', name: 'Memory', category: '知识记忆', desc: '持久化知识图谱记忆', note: '官方 MCP 参考服务器', pkg: '@modelcontextprotocol/server-memory' },
-  { id: 'mcp-time', name: 'Time', category: '实用工具', desc: '时间与时区查询', note: '官方 MCP 参考服务器', pkg: '@modelcontextprotocol/server-time' },
+  { id: 'tavily', name: 'Tavily Search', category: '联网搜索', desc: '实时网络搜索，检索网页与新闻', note: '来自 Tavily', pkg: 'tavily-mcp' },
+  { id: 'brave', name: 'Brave Search', category: '联网搜索', desc: 'Brave 搜索引擎', note: '来自 Brave', pkg: '@modelcontextprotocol/server-brave-search' },
+  { id: 'e2b', name: 'E2B Code Interpreter', category: '代码解释器', desc: '云端沙盒运行 Python/代码', note: '来自 E2B', pkg: '@e2b/mcp-server' },
+  { id: 'firecrawl', name: 'Firecrawl', category: '网页抓取', desc: '网页抓取转 Markdown，适合文档解析', note: '来自 Firecrawl', pkg: 'firecrawl-mcp' },
+  { id: 'fetch', name: 'Fetch', category: '网页抓取', desc: '抓取网页内容转 Markdown', note: '来自 Anthropic', pkg: '@modelcontextprotocol/server-fetch' },
+  { id: 'filesystem', name: 'Filesystem', category: '文件与系统', desc: '读写本地文件系统', note: '来自 Anthropic', pkg: '@modelcontextprotocol/server-filesystem' },
+  { id: 'everything', name: 'Everything', category: '文件与系统', desc: 'Windows 文件快速搜索', note: '来自 Anthropic', pkg: '@modelcontextprotocol/server-everything' },
+  { id: 'puppeteer', name: 'Puppeteer', category: '浏览器自动化', desc: '无头浏览器自动化、网页交互', note: '来自 Anthropic', pkg: '@modelcontextprotocol/server-puppeteer' },
+  { id: 'playwright', name: 'Playwright', category: '浏览器自动化', desc: '浏览器自动化与测试', note: '来自 微软', pkg: '@playwright/mcp' },
+  { id: 'github', name: 'GitHub', category: '代码与仓库', desc: '操作 GitHub 仓库、Issue、PR', note: '来自 GitHub', pkg: '@modelcontextprotocol/server-github' },
+  { id: 'git', name: 'Git', category: '代码与仓库', desc: '读取与操作本地 Git 仓库', note: '来自 Anthropic', pkg: '@modelcontextprotocol/server-git' },
+  { id: 'postgres', name: 'PostgreSQL', category: '数据库', desc: '查询 PostgreSQL 数据库', note: '来自 Anthropic', pkg: '@modelcontextprotocol/server-postgres' },
+  { id: 'sqlite', name: 'SQLite', category: '数据库', desc: '查询 SQLite 数据库', note: '来自 Anthropic', pkg: '@modelcontextprotocol/server-sqlite' },
+  { id: 'memory', name: 'Memory', category: '知识记忆', desc: '持久化知识图谱记忆', note: '来自 Anthropic', pkg: '@modelcontextprotocol/server-memory' },
+  { id: 'time', name: 'Time', category: '实用工具', desc: '时间与时区查询', note: '来自 Anthropic', pkg: '@modelcontextprotocol/server-time' },
 ]
 
-// ===== 插件市场（DSH 插件，区别于工具） =====
+// ===== Plugin 市场（DSH 插件，区别于工具） =====
 const PLUGINS = [
-  { id: 'plg-web-search', name: 'DeepSeek 搜索', category: '搜索', desc: '接入 DeepSeek 联网搜索能力', note: 'DeepSeek 官方插件', pkg: '@deepseek-ai/dsh-web-search-deepseek' },
-  { id: 'plg-mcp', name: 'MCP 客户端', category: '协议接入', desc: '接入 MCP 协议，管理 MCP 服务器', note: 'DeepSeek 官方插件', pkg: '@deepseek-ai/dsh-mcp-client' },
-  { id: 'plg-bash', name: 'Bash 终端', category: '终端', desc: '提供 Bash 命令执行终端', note: 'DeepSeek 官方插件', pkg: '@deepseek-ai/dsh-terminal-bash' },
-  { id: 'plg-workflow', name: '工作流', category: '自动化', desc: '多智能体工作流编排', note: 'DeepSeek 官方插件', pkg: '@deepseek-ai/dsh-tool-workflow' },
+  { id: 'plg-web-search', name: 'DeepSeek 搜索', category: '联网搜索', desc: '接入 DeepSeek 联网搜索能力', note: '来自 DeepSeek', pkg: '@deepseek-ai/dsh-web-search-deepseek' },
+  { id: 'plg-mcp', name: 'MCP 客户端', category: '协议接入', desc: '接入 MCP 协议，管理 MCP 服务器', note: '来自 DeepSeek', pkg: '@deepseek-ai/dsh-mcp-client' },
+  { id: 'plg-bash', name: 'Bash 终端', category: '终端', desc: '提供 Bash 命令执行终端', note: '来自 DeepSeek', pkg: '@deepseek-ai/dsh-terminal-bash' },
+  { id: 'plg-workflow', name: '工作流', category: '自动化', desc: '多智能体工作流编排', note: '来自 DeepSeek', pkg: '@deepseek-ai/dsh-tool-workflow' },
 ]
 function applyTools(ctx) {
   const subprocess = ctx.get('subprocess')
