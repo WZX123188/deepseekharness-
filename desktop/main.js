@@ -24,6 +24,10 @@ let autoPinned = false
 
 app.setAppUserModelId('com.dsh.client')
 app.setName('DeepSeek Harness')
+// 内存优化：纯文本聊天界面不需要 GPU 加速，关闭可显著降低 GPU 进程内存占用
+app.disableHardwareAcceleration()
+// 限制渲染进程数为 1（本应用只有一个窗口，避免 Chromium 多开渲染进程）
+app.commandLine.appendSwitch('renderer-process-limit', '1')
 // 开机自启（默认开启，托盘菜单可关）
 app.setLoginItemSettings({ openAtLogin: true })
 
