@@ -420,50 +420,6 @@ function ProjectsSection() {
     el('div', { className: 'dsh-muted' }, '项目即工作区：一个文件夹对应一个项目，会话与文件按项目隔离。'))
 }
 
-// 功能面板：侧边栏按钮点开后，浮层展示对应功能
-var FEATURES = [
-  { id: 'projects', label: '项目', comp: ProjectsSection },
-  { id: 'api', label: 'API', comp: ApiSection },
-  { id: 'balance', label: '余额', comp: BalanceSection },
-  { id: 'tools', label: 'Tool', comp: ToolsSection },
-  { id: 'plugins', label: 'Plugin', comp: PluginsSection },
-  { id: 'update', label: '更新', comp: UpdateSection },
-  { id: 'permission', label: '权限', comp: PermissionSection },
-  { id: 'guide', label: '指南', comp: GuideSection },
-]
-
-var currentFeature = null
-var featureSubs = []
-function openFeaturePanel(id) {
-  currentFeature = id
-  featureSubs.forEach(function (fn) { fn(currentFeature) })
-}
-function useCurrentFeature() {
-  var p = React.useState(currentFeature)
-  var state = p[0]
-  var setState = p[1]
-  React.useEffect(function () {
-    var fn = function (v) { setState(v) }
-    featureSubs.push(fn)
-    return function () { var i = featureSubs.indexOf(fn); if (i !== -1) featureSubs.splice(i, 1) }
-  }, [])
-  return state
-}
-
-function FeaturePanel() {
-  var feat = useCurrentFeature()
-  if (feat === null) return null
-  var entry = null
-  for (var i = 0; i < FEATURES.length; i++) { if (FEATURES[i].id === feat) { entry = FEATURES[i]; break } }
-  if (entry === null) return null
-  return el('div', { style: { position: 'fixed', inset: '0', background: 'rgba(0,0,0,.45)', zIndex: 9999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '16px' } },
-    el('div', { style: { background: '#1a1a1a', borderRadius: '16px', width: '100%', maxWidth: '760px', maxHeight: '88vh', overflow: 'auto', padding: '18px' } },
-      el('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' } },
-        el('div', { style: { fontWeight: 600, fontSize: '16px' } }, entry.label),
-        el('button', { onClick: function () { openFeaturePanel(null) }, style: { background: 'transparent', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: '18px', padding: '4px 8px' } }, '✕')),
-      React.createElement(entry.comp)))
-}
-
 return {
   apply(ctx) {
     var slots = ctx.get('slots')
@@ -517,25 +473,13 @@ return {
         function () { return React.createElement(PermissionSection) }
       )
     })
-    // 侧边栏底部：一排功能入口按钮（点击弹浮层面板）
+    // 侧边栏底部的「功能」入口，提示功能在设置中
     slots.inject('sidebar.footer.action', function () {
       return slots.register(
         { name: 'sidebar.footer.action', id: 'dsh-features', order: 5, label: '功能' },
-        function (props) {
-          var wide = props && props.wide
-          return el('div', { style: { display: 'flex', flexDirection: 'column', gap: '2px', minWidth: wide ? '120px' : 'auto' } },
-            FEATURES.map(function (f) {
-              return el('button', { key: f.id, onClick: function () { openFeaturePanel(f.id) }, style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: '5px 10px', borderRadius: '8px', fontSize: '13px', color: 'inherit', textAlign: 'left' } }, f.label)
-            })
-          )
+        function () {
+          return el('button', { title: '功能都在 设置 里：项目 / API 管理 / 权限 / 余额 / Tool 市场 / Plugin 市场 / 检查更新 / 使用指南', style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: '6px 10px', borderRadius: '8px', fontSize: '13px', color: 'inherit' } }, '功能')
         }
-      )
-    })
-    // 功能浮层面板
-    slots.inject('shell.overlay', function () {
-      return slots.register(
-        { name: 'shell.overlay', id: 'dsh-feature-panel', order: 5 },
-        function () { return React.createElement(FeaturePanel) }
       )
     })
   },
