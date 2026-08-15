@@ -301,66 +301,12 @@ function PluginsSection() {
     el('div', { className: 'dsh-muted' }, '插件 = 扩展 harness 本身的能力（区别于工具）；均为官方可信来源。'))
 }
 
-function ApiSection() {
-  var p = React.useState({ status: 'idle', info: null, error: null, msg: null })
-  var state = p[0]
-  var setState = p[1]
-  var kp = React.useState('')
-  var keyInput = kp[0]
-  var setKeyInput = kp[1]
-  var tp = React.useState(false)
-  var testing = tp[0]
-  var setTesting = tp[1]
-  function load() {
-    setState({ status: 'loading', info: null, error: null, msg: null })
-    host.call('get-api-status').then(function (res) {
-      if (res && res.ok) setState({ status: 'ok', info: res, error: null, msg: null })
-      else setState({ status: 'error', info: null, error: (res && res.error) || '未知错误', msg: null })
-    }).catch(function (e) { setState({ status: 'error', info: null, error: String((e && e.message) || e), msg: null }) })
-  }
-  function save() {
-    host.call('set-api-key', { value: keyInput }).then(function (res) {
-      setKeyInput('')
-      if (res && res.ok) { setState({ status: 'ok', info: state.info, error: null, msg: '已保存' }); load() }
-      else setState({ status: 'error', info: state.info, error: (res && res.error) || '保存失败', msg: null })
-    }).catch(function (e) { setState({ status: 'error', info: state.info, error: String((e && e.message) || e), msg: null }) })
-  }
-  function test() {
-    setTesting(true)
-    host.call('test-api').then(function (res) {
-      setTesting(false)
-      if (res && res.ok) setState({ status: 'ok', info: state.info, error: null, msg: '连接成功 ✓' })
-      else setState({ status: 'error', info: state.info, error: (res && res.error) || '连接失败', msg: null })
-    }).catch(function (e) { setTesting(false); setState({ status: 'error', info: state.info, error: String((e && e.message) || e), msg: null }) })
-  }
-  function clearKey() {
-    host.call('clear-api-key').then(function () { load() }).catch(function () {})
-  }
-  React.useEffect(function () { load() }, [])
-
-  var configured = state.status === 'ok' && state.info && state.info.configured
-  return el('div', { className: 'dsh-page' },
-    el('div', { className: 'dsh-head' }, el('h2', { className: 'dsh-h2' }, 'API 管理')),
-    el('div', { className: 'dsh-card' },
-      el('div', { className: 'dsh-row' },
-        el('span', { className: 'dsh-label' }, 'DeepSeek API Key'),
-        configured ? el('span', { className: 'dsh-ok' }, '已配置' + (state.info.source ? '（' + state.info.source + '）' : '')) : el('span', { className: 'dsh-err' }, '未配置')),
-      el('div', { style: { display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' } },
-        el('input', { type: 'password', placeholder: 'sk-...', value: keyInput, onChange: function (e) { setKeyInput(e.target.value) }, style: { flex: 1, minWidth: '200px', padding: '8px', borderRadius: '8px', border: '1px solid rgba(127,127,127,.3)', background: 'transparent', color: 'inherit' } }),
-        el('button', { className: 'dsh-btn', onClick: save, disabled: keyInput.trim() === '' }, '保存'),
-        el('button', { className: 'dsh-btn ghost', onClick: test, disabled: testing }, testing ? '测试中…' : '测试连接'),
-        configured ? el('button', { className: 'dsh-btn ghost', onClick: clearKey }, '清除') : null),
-      state.msg ? el('div', { className: 'dsh-ok', style: { marginTop: '8px' } }, state.msg) : null,
-      state.error ? el('div', { className: 'dsh-err', style: { marginTop: '8px' } }, state.error) : null),
-    el('div', { className: 'dsh-muted' }, 'Key 保存在本地凭据，不会上传。到 platform.deepseek.com → API Keys 创建后粘贴到这里。'))
-}
-
 function GuideSection() {
   return el('div', { className: 'dsh-page' },
     el('h2', { className: 'dsh-h2' }, '使用指南'),
     el('div', { className: 'dsh-card' },
       el('div', { className: 'dsh-h2', style: { marginBottom: '8px' } }, '第一步：接入 API'),
-      el('div', { className: 'dsh-muted' }, '在「API 管理」页填入 DeepSeek API Key（platform.deepseek.com → API Keys 创建），点「保存」再「测试连接」。')),
+      el('div', { className: 'dsh-muted' }, '在「设置 → 模型」页配置 DeepSeek API Key（platform.deepseek.com → API Keys 创建）。')),
     el('div', { className: 'dsh-card' },
       el('div', { className: 'dsh-h2', style: { marginBottom: '8px' } }, '第二步：功能介绍'),
       el('div', { className: 'dsh-muted' }, '· 权限门：修改 / 删除文件时勾选「同意」并确认后放行；读取默认放行。'),
@@ -445,12 +391,6 @@ return {
     })
     slots.inject('settings.section', function () {
       return slots.register(
-        { name: 'settings.section', id: 'dsh-api', order: 5, label: 'API 管理' },
-        function () { return React.createElement(ApiSection) }
-      )
-    })
-    slots.inject('settings.section', function () {
-      return slots.register(
         { name: 'settings.section', id: 'dsh-tools', order: 35, label: 'Tool 市场' },
         function () { return React.createElement(ToolsSection) }
       )
@@ -478,7 +418,7 @@ return {
       return slots.register(
         { name: 'sidebar.footer.action', id: 'dsh-features', order: 5, label: '功能' },
         function () {
-          return el('button', { title: '功能都在 设置 里：项目 / API 管理 / 权限 / 余额 / Tool 市场 / Plugin 市场 / 检查更新 / 使用指南', style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: '6px 10px', borderRadius: '8px', fontSize: '13px', color: 'inherit' } }, '功能')
+          return el('button', { title: '功能都在 设置 里：项目 / 权限 / 余额 / Tool 市场 / Plugin 市场 / 检查更新 / 使用指南', style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: '6px 10px', borderRadius: '8px', fontSize: '13px', color: 'inherit' } }, '功能')
         }
       )
     })
