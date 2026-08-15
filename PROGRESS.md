@@ -100,3 +100,29 @@ G:\dsh客户端\
 
 - 首轮：需求确认、方案论证、环境核查、迁 G:、接口调研、权限门代码+接线验证（inject→ctx.get 修复）。
 - 二轮：余额/更新/客户端 UI 代码 + 全量语法校验通过；确认"置顶"需桌面客户端。
+
+## 最新进度（boot 插件已落地，部署于 plugin/boot/）
+
+boot 插件 = 启动引导宿主插件（plugin/boot/），监听 agent/created，用 dynamicCordisRunner
+define+run+runHostHalf(approvalId) 自动加载全部功能（host-body.js + client-body.js）。
+已部署到 `C:\Users\WZX\.dsh\profiles\web\node_modules\dsh-client-boot\` 与 `desktop\boot\`。
+
+已完成功能（settings 里可见）：
+- 权限门（读放行 / G 盘放行 / 写改删需勾选 + 敏感操作开关）
+- 余额 / 用量（本次 / 累计 / 会话数，本地持久化累加，标注估算）
+- 检查更新（官方 npm 与 GitHub 分开；GitHub 区分「无发布」与「连不上」；检测到新版出「一键更新」按钮）
+- Tool 市场（11 个去重后工具）+ Plugin 市场（MCP 客户端）
+- 项目区（工作区列表/新建）
+- 使用指南
+- 意见区（提交反馈 → 打开 GitHub Issue 预填页）
+- 神奇小开关（一键切 DeepSeek-V4-Pro + 极简模式；settings 服务写 agent-presets.default + agentDefaultModel.saveSelection）
+
+桌面客户端（desktop/）：Electron，托盘/自启/Ctrl+Alt+D/弹窗置顶/鲸鱼图标/内置 Node，
+installer.nsh 快捷方式勾选页，说明.txt（UTF-8 BOM + 免责声明）。安装器已出 1.0.0（暂缓重打包）。
+
+## 下一步（剩余）
+
+1. 视图模式（vision mode）——用户明确暂缓，下一轮提醒。
+2. GitHub 推送：本地 v1.0.0 / v1.0.1 标签已打，远程未推；由用户用 PAT 执行
+   `cd G:\dsh客户端; git push -u origin main --tags`。
+3. 用户验收各功能后，再重打包安装器（用户要求"先别打包"）。
