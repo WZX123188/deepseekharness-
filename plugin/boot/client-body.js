@@ -107,15 +107,26 @@ function UpdateSection() {
   if (state.status === 'loading') inner = el('div', { className: 'dsh-muted' }, '正在检查更新…')
   else if (state.status === 'error') inner = el('div', { className: 'dsh-err' }, state.error)
   else if (state.status === 'ok' && state.res) {
+    var official = state.res.official || {}
+    var github = state.res.github || {}
     inner = el('div', {},
-      el('div', { className: 'dsh-row' }, el('span', { className: 'dsh-label' }, '当前版本'), el('span', { className: 'dsh-value' }, state.res.current)),
-      el('div', { className: 'dsh-row' }, el('span', { className: 'dsh-label' }, '最新版本'), el('span', { className: 'dsh-value' }, state.res.latest)),
-      el('div', { style: { paddingTop: '12px' } },
-        state.res.hasUpdate
-          ? el('button', { className: 'dsh-btn', onClick: doUpdate, disabled: updating }, updating ? '更新中…' : '一键更新')
-          : el('div', { className: 'dsh-ok' }, '已是最新版本')
-      ),
-      state.updated ? el('div', { className: 'dsh-ok', style: { paddingTop: '8px' } }, '更新完成，请重启 dsh web 生效。') : null
+      el('div', { className: 'dsh-h2', style: { marginBottom: '8px' } }, '官方更新'),
+      el('div', { className: 'dsh-card', style: { marginBottom: '12px' } },
+        el('div', { className: 'dsh-row' }, el('span', { className: 'dsh-label' }, '当前版本'), el('span', { className: 'dsh-value' }, official.current || '-')),
+        el('div', { className: 'dsh-row' }, el('span', { className: 'dsh-label' }, '最新版本'), el('span', { className: 'dsh-value' }, official.latest || '-')),
+        el('div', { style: { paddingTop: '12px' } },
+          official.hasUpdate
+            ? el('button', { className: 'dsh-btn', onClick: doUpdate, disabled: updating }, updating ? '更新中…' : '一键更新')
+            : el('div', { className: 'dsh-ok' }, '已是最新版本')),
+        el('div', { className: 'dsh-muted', style: { marginTop: '8px' } }, '官方更新只更新核心程序，不影响你额外添加的功能。')),
+      el('div', { className: 'dsh-h2', style: { marginBottom: '8px' } }, 'GitHub 更新'),
+      el('div', { className: 'dsh-card' },
+        github.ok
+          ? el('div', {},
+              el('div', { className: 'dsh-row' }, el('span', { className: 'dsh-label' }, '最新版本'), el('span', { className: 'dsh-value' }, github.tag)),
+              el('div', { className: 'dsh-row' }, el('span', { className: 'dsh-label' }, '说明'), el('span', { className: 'dsh-value' }, github.name || '-')))
+          : el('div', { className: 'dsh-muted' }, '暂无 GitHub 发布，或无法连接 GitHub。')),
+      state.updated ? el('div', { className: 'dsh-ok', style: { paddingTop: '8px' } }, '更新完成，请重启生效。') : null
     )
   }
 
@@ -126,6 +137,43 @@ function UpdateSection() {
     ),
     el('div', { className: 'dsh-card' }, inner)
   )
+}
+
+function PermissionSection() {
+  var p = React.useState({ status: 'idle', mode: null, error: null })
+  var state = p[0]
+  var setState = p[1]
+  function load() {
+    setState({ status: 'loading', mode: null, error: null })
+    host.call('get-permission-mode').then(function (res) {
+      if (res && res.ok) setState({ status: 'ok', mode: res.mode, error: null })
+      else setState({ status: 'error', mode: null, error: (res && res.error) || '未知错误' })
+    }).catch(function (e) { setState({ status: 'error', mode: null, error: String((e && e.message) || e) }) })
+  }
+  function setMode(mode) {
+    host.call('set-permission-mode', { mode: mode }).then(function (res) {
+      if (res && res.ok) setState({ status: 'ok', mode: res.mode, error: null })
+      else setState({ status: 'error', mode: state.mode, error: (res && res.error) || '设置失败' })
+    }).catch(function (e) { setState({ status: 'error', mode: state.mode, error: String((e && e.message) || e) }) })
+  }
+  React.useEffect(function () { load() }, [])
+
+  var mode = state.mode
+  return el('div', { className: 'dsh-page' },
+    el('h2', { className: 'dsh-h2' }, '权限'),
+    el('div', { className: 'dsh-card' },
+      el('div', { className: 'dsh-h2', style: { marginBottom: '8px' } }, '文件操作权限'),
+      el('div', { className: 'dsh-row', style: { cursor: 'pointer' }, onClick: function () { setMode('ask') } },
+        el('div', {},
+          el('div', { className: 'dsh-value' }, '敏感操作需用户决策'),
+          el('div', { className: 'dsh-muted' }, '修改 / 删除文件时弹窗让你勾选同意（推荐）')),
+        mode === 'ask' ? el('span', { className: 'dsh-ok' }, '✓ 当前') : null),
+      el('div', { className: 'dsh-row', style: { cursor: 'pointer' }, onClick: function () { setMode('trust') } },
+        el('div', {},
+          el('div', { className: 'dsh-value' }, '完全放开（信任）'),
+          el('div', { className: 'dsh-muted' }, '所有文件操作都不询问，直接放行')),
+        mode === 'trust' ? el('span', { className: 'dsh-ok' }, '✓ 当前') : null),
+      state.error ? el('div', { className: 'dsh-err', style: { marginTop: '8px' } }, state.error) : null))
 }
 
 function ToolsSection() {
@@ -344,6 +392,12 @@ return {
       return slots.register(
         { name: 'settings.section', id: 'dsh-guide', order: 45, label: '使用指南' },
         function () { return React.createElement(GuideSection) }
+      )
+    })
+    slots.inject('settings.section', function () {
+      return slots.register(
+        { name: 'settings.section', id: 'dsh-permission', order: 6, label: '权限' },
+        function () { return React.createElement(PermissionSection) }
       )
     })
   },

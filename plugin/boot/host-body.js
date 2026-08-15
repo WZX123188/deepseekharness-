@@ -1,4 +1,26 @@
-// 合并宿主代码（权限门 + 余额 + 更新 + 工具市场 + API管理 + 项目区）
+// 合并宿主代码（权限门 + 余额 + 更新[官方/GitHub] + 工具市场 + API管理 + 项目区 + 权限设置）
+let permissionMode = 'ask'
+const CONFIG_PATH = 'C:\\Users\\WZX\\.dsh\\dsh-client-config.json'
+
+async function readConfigFile(subprocess) {
+  try {
+    const nodePath = await subprocess.resolveExecutable('node')
+    const script = "try{console.log(require('fs').readFileSync(process.env.DSH_CFG,'utf8'))}catch(e){console.log('{}')}"
+    const handle = subprocess.spawn({ argv: [nodePath, '-e', script], cwd: 'C:\\Users\\WZX', stdio: { stdin: 'ignore', stdout: { maxBytes: 8192 }, stderr: { maxBytes: 8192 } }, graceMs: 8000, env: { DSH_CFG: CONFIG_PATH } })
+    await handle.waitForExit()
+    const out = handle.collected.stdout ? handle.collected.stdout.readFrom(0).text : ''
+    return JSON.parse(out.trim() || '{}')
+  } catch (e) { return {} }
+}
+async function writeConfigFile(subprocess, obj) {
+  try {
+    const nodePath = await subprocess.resolveExecutable('node')
+    const script = "try{require('fs').writeFileSync(process.env.DSH_CFG, process.env.DSH_VAL)}catch(e){console.error(e)}"
+    const handle = subprocess.spawn({ argv: [nodePath, '-e', script], cwd: 'C:\\Users\\WZX', stdio: { stdin: 'ignore', stdout: { maxBytes: 8192 }, stderr: { maxBytes: 8192 } }, graceMs: 8000, env: { DSH_CFG: CONFIG_PATH, DSH_VAL: JSON.stringify(obj) } })
+    await handle.waitForExit()
+  } catch (e) {}
+}
+
 // ===== 权限门 =====
 const SHELL_MUTATION = new RegExp(
   '\\b(Remove-Item|del|erase|rm|rd|rmdir|Set-Content|Add-Content|Out-File|' +
@@ -48,6 +70,7 @@ function applyGate(ctx) {
   const mine = new Set()
   const signal = makeMarkerSignal(subprocess)
   ctx.on('tools/pre-execute', async (exec, next) => {
+    if (permissionMode === 'trust') return next()
     try {
       const name = exec && exec.name
       const args = (exec && exec.arguments) || {}
@@ -67,6 +90,26 @@ function applyGate(ctx) {
       if (ok) return next()
       return { kind: 'deny', reason: '用户未同意此文件操作' }
     } catch (error) { return { kind: 'deny', reason: '权限门询问失败：' + (error && error.message ? error.message : String(error)) } }
+  })
+}
+
+// ===== 权限设置 =====
+function applyPermission(ctx) {
+  const subprocess = ctx.get('subprocess')
+  if (subprocess === undefined) return
+  readConfigFile(subprocess).then(function (cfg) {
+    if (cfg && cfg.permissionMode === 'trust') permissionMode = 'trust'
+    else permissionMode = 'ask'
+  }).catch(function () {})
+  harness.handle('get-permission-mode', async () => {
+    return { ok: true, mode: permissionMode }
+  })
+  harness.handle('set-permission-mode', async (args) => {
+    const mode = args && args.mode
+    if (mode !== 'ask' && mode !== 'trust') return { ok: false, error: '无效模式' }
+    permissionMode = mode
+    await writeConfigFile(subprocess, { permissionMode: mode })
+    return { ok: true, mode: permissionMode }
   })
 }
 
@@ -94,11 +137,13 @@ function applyBalance(ctx) {
   })
 }
 
-// ===== 更新 =====
+// ===== 更新（官方 npm + GitHub 分开） =====
 const PKG = '@deepseek-ai/dsh'
 const REGISTRY_LATEST = 'https://registry.npmmirror.com/' + PKG.replace('/', '%2f') + '/latest'
 const CURRENT_VERSION = '0.1.0-rc.6'
+const GITHUB_RELEASES = 'https://api.github.com/repos/WZX123188/deepseekharness-/releases/latest'
 function latestScript() { return "(async()=>{const r=await fetch('" + REGISTRY_LATEST + "');const j=await r.json();console.log(String(j.version||''))})().catch(e=>{console.error(String((e&&e.stack)||e));process.exit(1)})" }
+function githubScript() { return "(async()=>{const r=await fetch('" + GITHUB_RELEASES + "',{headers:{'User-Agent':'dsh-client'}});const j=await r.json();console.log(JSON.stringify({tag:(j&&j.tag_name)||'',name:(j&&j.name)||'',html:(j&&j.html_url)||''}))})().catch(e=>{console.error(String((e&&e.stack)||e));process.exit(1)})" }
 function applyUpdate(ctx) {
   const subprocess = ctx.get('subprocess')
   if (subprocess === undefined) return
@@ -110,15 +155,28 @@ function applyUpdate(ctx) {
   }
   harness.handle('check-update', async () => {
     try {
+      // 官方
       const nodePath = await subprocess.resolveExecutable('node')
-      const handle = subprocess.spawn({ argv: [nodePath, '-e', latestScript()], cwd: 'C:\\Users\\WZX', stdio: { stdin: 'ignore', stdout: { maxBytes: 16384 }, stderr: { maxBytes: 16384 } }, graceMs: 20000 })
-      const { stdout, stderr } = await collect(handle)
-      const latest = stdout.trim().split(/\r?\n/).filter(Boolean).pop() || ''
-      if (latest === '') return { ok: false, error: stderr.trim() || '查询最新版本失败' }
-      return { ok: true, current: CURRENT_VERSION, latest, hasUpdate: latest !== CURRENT_VERSION }
+      const h1 = subprocess.spawn({ argv: [nodePath, '-e', latestScript()], cwd: 'C:\\Users\\WZX', stdio: { stdin: 'ignore', stdout: { maxBytes: 16384 }, stderr: { maxBytes: 16384 } }, graceMs: 20000 })
+      const { stdout } = await collect(h1)
+      const officialLatest = stdout.trim().split(/\r?\n/).filter(Boolean).pop() || ''
+      // GitHub
+      let github = { tag: '', name: '', html: '', ok: false }
+      try {
+        const h2 = subprocess.spawn({ argv: [nodePath, '-e', githubScript()], cwd: 'C:\\Users\\WZX', stdio: { stdin: 'ignore', stdout: { maxBytes: 16384 }, stderr: { maxBytes: 16384 } }, graceMs: 20000 })
+        const g = await collect(h2)
+        const glast = g.stdout.trim().split(/\r?\n/).filter(Boolean).pop() || ''
+        const parsed = JSON.parse(glast)
+        github = { tag: parsed.tag, name: parsed.name, html: parsed.html, ok: parsed.tag !== '' }
+      } catch (e) { github = { tag: '', name: '', html: '', ok: false } }
+      return {
+        ok: true,
+        official: { current: CURRENT_VERSION, latest: officialLatest, hasUpdate: officialLatest !== '' && officialLatest !== CURRENT_VERSION },
+        github: github,
+      }
     } catch (error) { return { ok: false, error: String((error && error.message) || error) } }
   })
-  harness.handle('do-update', async () => {
+  harness.handle('do-update', async (args) => {
     try {
       const cmdPath = await subprocess.resolveExecutable('cmd.exe')
       const handle = subprocess.spawn({ argv: [cmdPath, '/c', 'npm', 'install', '-g', PKG + '@latest'], cwd: 'C:\\Users\\WZX', stdio: { stdin: 'ignore', stdout: { maxBytes: 262144 }, stderr: { maxBytes: 262144 } }, graceMs: 180000 })
@@ -246,6 +304,7 @@ function applyProjects(ctx) {
 return {
   apply(ctx) {
     applyGate(ctx)
+    applyPermission(ctx)
     applyBalance(ctx)
     applyUpdate(ctx)
     applyTools(ctx)

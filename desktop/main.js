@@ -93,19 +93,21 @@ function createTray() {
   tray.on('click', function () { toggleWin() })
 }
 
-// 每 500ms 检查「待处理问题」标记：存在则置顶+聚焦，不存在则还原（仅还原本插件自动置顶，不干扰手动置顶）
+// 每 500ms 检查「待处理问题」标记：只在标记从无到有时置顶聚焦一次，从有到无时还原
+let wasPending = false
 function pollMarker() {
   setInterval(function () {
     if (!win || win.isDestroyed()) return
     let pending = false
     try { pending = fs.existsSync(MARKER) } catch (e) { pending = false }
-    if (pending) {
+    if (pending && !wasPending) {
       if (!win.isAlwaysOnTop()) { win.setAlwaysOnTop(true); autoPinned = true }
       win.show()
       win.focus()
-    } else {
+    } else if (!pending && wasPending) {
       if (autoPinned) { win.setAlwaysOnTop(false); autoPinned = false }
     }
+    wasPending = pending
   }, 500)
 }
 
@@ -116,6 +118,7 @@ if (!gotLock) {
   app.on('second-instance', function () { showWin() })
 
   app.whenReady().then(function () {
+    try { fs.unlinkSync(MARKER) } catch (e) {}  // 清残留标记，防止启动即置顶
     startDsh()
     createTray()
     try { globalShortcut.register('CommandOrControl+Alt+D', function () { toggleWin() }) } catch (e) {}
