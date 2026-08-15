@@ -1,5 +1,5 @@
-# dependencies
-node_modules/
+# dependencies（仅应用自身的依赖目录，避免 542MB 进 git；内置 Node 运行时整目录由下方 desktop/node/ 管理）
+desktop/node_modules/
 
 # logs
 *.log

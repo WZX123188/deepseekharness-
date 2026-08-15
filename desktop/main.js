@@ -6,15 +6,18 @@ const fs = require('fs')
 const os = require('os')
 const path = require('path')
 
+// 资源根目录：打包后（app.isPackaged）用 extraResources 拷到 resources/，
+// 开发模式（electron .）直接用 __dirname。spawn 必须用真实磁盘路径。
+const APP_DIR = app.isPackaged ? process.resourcesPath : __dirname
 // 优先用打包进去的 Node 运行时，缺失时回退到系统 Node
-const BUNDLED_NODE = path.join(__dirname, 'node', 'node.exe')
+const BUNDLED_NODE = path.join(APP_DIR, 'node', 'node.exe')
 const NODE = fs.existsSync(BUNDLED_NODE) ? BUNDLED_NODE : 'C:\\Program Files\\nodejs\\node.exe'
 const DSH_BIN = path.join(process.env.APPDATA || 'C:\\Users\\WZX\\AppData\\Roaming', 'npm', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
-const NPM_CLI = path.join(__dirname, 'node', 'node_modules', 'npm', 'bin', 'npm-cli.js')
+const NPM_CLI = path.join(APP_DIR, 'node', 'node_modules', 'npm', 'bin', 'npm-cli.js')
 const PORT = 3180
 const BASE = 'http://127.0.0.1:' + PORT
 const MARKER = path.join(os.tmpdir(), 'dsh-question-pending')
-const ICON = path.join(__dirname, 'icon.ico')
+const ICON = path.join(APP_DIR, 'icon.ico')
 
 let dshProc = null
 let win = null
@@ -22,8 +25,10 @@ let tray = null
 let quitting = false
 let autoPinned = false
 
+// 强制界面语言为中文（Electron/Chromium 默认 locale 是 en-US，否则界面会显示英文）
+app.commandLine.appendSwitch('lang', 'zh-CN')
 app.setAppUserModelId('com.dsh.client')
-app.setName('DeepSeek Harness')
+app.setName('DeepSeekHarness')
 // 开机自启（默认开启，托盘菜单可关）
 app.setLoginItemSettings({ openAtLogin: true })
 
@@ -36,12 +41,16 @@ function waitForServer(cb, tries) {
 }
 
 function startDsh() {
-  const logFd = fs.openSync(path.join(__dirname, 'dsh.log'), 'a')
+  const logPath = path.join(app.getPath('userData'), 'dsh.log')
+  const logFd = fs.openSync(logPath, 'a')
   dshProc = spawn(NODE, [DSH_BIN, 'web', '--port', String(PORT)], {
-    cwd: 'C:\\Users\\WZX',
+    cwd: os.homedir(),
     stdio: ['ignore', logFd, logFd],
     env: process.env,
     windowsHide: true,
+  })
+  dshProc.on('error', function (e) {
+    try { fs.appendFileSync(logPath, '[dsh-client] dsh 启动失败: ' + (e && e.message || e) + '\n') } catch (_) {}
   })
   dshProc.on('exit', function () { dshProc = null })
 }
@@ -53,7 +62,7 @@ function ensureDsh(cb) {
   let proc
   try {
     proc = spawn(NODE, [NPM_CLI, 'install', '-g', '@deepseek-ai/dsh', '--registry', 'https://registry.npmmirror.com'], {
-      cwd: 'C:\\Users\\WZX',
+      cwd: os.homedir(),
       stdio: 'ignore',
       env: process.env,
       windowsHide: true,
@@ -71,7 +80,7 @@ function ensureFeatures(cb) {
   try {
     const home = process.env.USERPROFILE || 'C:\\Users\\WZX'
     const profileDir = path.join(home, '.dsh', 'profiles', 'web')
-    const bootSrc = path.join(__dirname, 'boot')
+    const bootSrc = path.join(APP_DIR, 'boot')
     const bootDst = path.join(profileDir, 'node_modules', 'dsh-client-boot')
     fs.mkdirSync(bootDst, { recursive: true })
     const files = ['package.json', 'index.js', 'host-body.js', 'client-body.js']
@@ -80,7 +89,7 @@ function ensureFeatures(cb) {
       if (fs.existsSync(s)) fs.copyFileSync(s, path.join(bootDst, files[i]))
     }
     // 把「神奇小开关」preset 装进用户 agent-presets 根（纯配置文件，非插件）
-    const presetsSrc = path.join(__dirname, 'presets')
+    const presetsSrc = path.join(APP_DIR, 'presets')
     const presetsDst = path.join(home, '.dsh', '.agent-presets')
     if (fs.existsSync(presetsSrc)) {
       const names = fs.readdirSync(presetsSrc)
@@ -102,6 +111,27 @@ function ensureFeatures(cb) {
       fs.writeFileSync(pkgPath, JSON.stringify({ name: 'dsh-profile-web', private: true, dependencies: {}, dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'] } } }, null, 2))
     }
     fs.writeFileSync(path.join(profileDir, 'cordis.patch.yml'), '- insert:\n    - id: dsh-client-boot\n      name: dsh-client-boot\n')
+    // 内核补丁（每次启动自动补回，防止 DSH 更新覆盖）：
+    // 1) runHostHalf 批准后清 requiresApproval —— 客户端半边免点同意自动加载
+    // 2) 成功时不再注入 "Cordis run ... completed successfully" 噪声 —— 避免它变成会话标题
+    try {
+      const runnerPath = path.join(home, '.dsh', 'profiles', 'node_modules', '@deepseek-ai', 'dsh-cordis-host-runner', 'lib', 'index.js')
+      if (fs.existsSync(runnerPath)) {
+        let s = fs.readFileSync(runnerPath, 'utf8')
+        let changed = false
+        const find1 = 'plan.plugin.clientVersionUpdatesApproved = true;'
+        if (!s.includes('attempt.requiresApproval = false;') && s.includes(find1)) {
+          s = s.replace(find1, find1 + '\n\t\t\t\t\tattempt.requiresApproval = false;')
+          changed = true
+        }
+        const re2 = /if \(settled\.ok\) text = [^;]*;/
+        if (!s.includes('if (settled.ok) return;') && re2.test(s)) {
+          s = s.replace(re2, 'if (settled.ok) return;')
+          changed = true
+        }
+        if (changed) fs.writeFileSync(runnerPath, s)
+      }
+    } catch (e) {}
     cb(null)
   } catch (e) { cb(e) }
 }
@@ -121,7 +151,7 @@ function createWindow() {
   win = new BrowserWindow({
     width: 1200,
     height: 820,
-    title: 'DeepSeek Harness',
+    title: 'DeepSeekHarness',
     icon: ICON,
     backgroundColor: '#ffffff',
     webPreferences: {
@@ -153,7 +183,7 @@ function refreshTrayMenu() {
 function createTray() {
   const img = nativeImage.createFromPath(ICON)
   tray = new Tray(img.resize({ width: 16, height: 16 }))
-  tray.setToolTip('DeepSeek Harness')
+  tray.setToolTip('DeepSeekHarness')
   refreshTrayMenu()
   tray.on('click', function () { toggleWin() })
 }

@@ -40,13 +40,16 @@ export function apply(ctx) {
           console.log('[dsh-boot] runHostHalf ok=' + (hh && hh.ok) + ' runId=' + (hh && hh.pluginRunId))
           const timer = ctx.get('timer')
           if (timer !== undefined) {
-            timer.timeout(function () {
+            function probe(tag) {
               try {
                 const insp2 = runner.inspectPlugin(agent, receipt.pluginId)
                 const lr2 = insp2 && insp2.latestRun
-                console.log('[dsh-boot] after6s: status=' + (lr2 && lr2.status) + ' host=' + (lr2 && lr2.host && lr2.host.status) + ' client=' + (lr2 && lr2.client && lr2.client.status))
-              } catch (e) { console.log('[dsh-boot] inspect2 err=' + ((e && e.message) || e)) }
-            }, 6000)
+                console.log('[dsh-boot] ' + tag + ': status=' + (lr2 && lr2.status) + ' host=' + (lr2 && lr2.host && lr2.host.status) + ' client=' + (lr2 && lr2.client && lr2.client.status) + ' reqApproval=' + (lr2 && lr2.requiresApproval))
+              } catch (e) { console.log('[dsh-boot] inspect err=' + ((e && e.message) || e)) }
+            }
+            timer.timeout(function () { probe('after6s') }, 6000)
+            timer.timeout(function () { probe('after15s') }, 15000)
+            timer.timeout(function () { probe('after30s') }, 30000)
           }
         }
       }
