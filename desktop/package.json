@@ -37,6 +37,7 @@
       "installerHeaderIcon": "icon.ico",
       "runAfterFinish": true,
       "deleteAppDataOnUninstall": false,
+      "include": "installer.nsh",
       "artifactName": "DeepSeek-Harness-Setup-${version}.exe"
     }
   }
