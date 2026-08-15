@@ -7,3 +7,8 @@ node_modules/
 # OS
 Thumbs.db
 .DS_Store
+
+# desktop build output (installer / unpacked app)
+desktop/release/
+desktop/install.log
+desktop/build.log
