@@ -6,7 +6,9 @@ const fs = require('fs')
 const os = require('os')
 const path = require('path')
 
-const NODE = 'C:\\Program Files\\nodejs\\node.exe'
+// 优先用打包进去的 Node 运行时，缺失时回退到系统 Node
+const BUNDLED_NODE = path.join(__dirname, 'node', 'node.exe')
+const NODE = fs.existsSync(BUNDLED_NODE) ? BUNDLED_NODE : 'C:\\Program Files\\nodejs\\node.exe'
 const DSH_BIN = 'C:\\Users\\WZX\\AppData\\Roaming\\npm\\node_modules\\@deepseek-ai\\dsh\\lib\\bin.js'
 const PORT = 3180
 const BASE = 'http://127.0.0.1:' + PORT
