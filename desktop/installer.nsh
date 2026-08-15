@@ -33,6 +33,5 @@ Page custom dshShortcutPage
   ${NSD_GetState} $dshStartMenuChecked $0
   ${If} $0 != ${BST_CHECKED}
     Delete "$newStartMenuLink"
-    RMDir "$SMPROGRAMS\${MENU_FILENAME}"
   ${EndIf}
 !macroend
