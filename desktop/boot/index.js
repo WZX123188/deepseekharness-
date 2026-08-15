@@ -38,6 +38,16 @@ export function apply(ctx) {
         if (approvalId) {
           const hh = await runner.runHostHalf(agent, receipt.pluginId, receipt.packageId, 'run', approvalId, true)
           console.log('[dsh-boot] runHostHalf ok=' + (hh && hh.ok) + ' runId=' + (hh && hh.pluginRunId))
+          const timer = ctx.get('timer')
+          if (timer !== undefined) {
+            timer.timeout(function () {
+              try {
+                const insp2 = runner.inspectPlugin(agent, receipt.pluginId)
+                const lr2 = insp2 && insp2.latestRun
+                console.log('[dsh-boot] after6s: status=' + (lr2 && lr2.status) + ' host=' + (lr2 && lr2.host && lr2.host.status) + ' client=' + (lr2 && lr2.client && lr2.client.status))
+              } catch (e) { console.log('[dsh-boot] inspect2 err=' + ((e && e.message) || e)) }
+            }, 6000)
+          }
         }
       }
     } catch (e) {

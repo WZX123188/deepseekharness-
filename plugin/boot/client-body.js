@@ -20,7 +20,10 @@ var CSS = [
   '.dsh-btn.ghost{background:transparent;color:' + BLUE + ';border:1px solid ' + BLUE + '}',
   '.dsh-err{color:#e5484d;font-size:13px}',
   '.dsh-ok{color:#30a46c;font-size:13px}',
+  '.dsh-link{color:' + BLUE + ';font-size:13px;text-decoration:none}',
+  '.dsh-link:hover{text-decoration:underline}',
   '.dsh-muted{opacity:.6;font-size:13px;line-height:1.5}',
+  '.dsh-note{opacity:.45;font-size:11px;line-height:1.5;color:inherit}',
   '.dsh-search{width:100%;padding:8px 12px;border-radius:8px;border:1px solid rgba(127,127,127,.3);background:transparent;color:inherit;margin-bottom:10px}',
   '.dsh-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}',
   '.dsh-tab{padding:6px 14px;border-radius:16px;border:1px solid rgba(127,127,127,.25);cursor:pointer;font-size:13px;background:transparent;color:inherit}',
@@ -86,10 +89,12 @@ function BalanceSection() {
     el('div', { className: 'dsh-card' },
       el('div', { className: 'dsh-h2', style: { marginBottom: '8px' } }, '本机 token 用量'),
       usage ? el('div', {},
+        el('div', { className: 'dsh-row' }, el('span', { className: 'dsh-label' }, '本次 token'), el('span', { className: 'dsh-value' }, usage.currentTokens)),
         el('div', { className: 'dsh-row' }, el('span', { className: 'dsh-label' }, '累计 token'), el('span', { className: 'dsh-value' }, usage.totalTokens)),
         el('div', { className: 'dsh-row' }, el('span', { className: 'dsh-label' }, '会话数'), el('span', { className: 'dsh-value' }, usage.sessionCount))
       ) : el('div', { className: 'dsh-muted' }, '暂无数据'),
-      el('div', { className: 'dsh-muted', style: { marginTop: '8px' } }, '数据来源：本地 token-meter 估算；范围：仅本机当前已加载会话，非平台账单。')
+      el('div', { className: 'dsh-note', style: { marginTop: '8px' } }, '· 用量为本地估算值，仅供参考，非平台账单；以 DeepSeek 开放平台为准。'),
+      el('div', { className: 'dsh-note' }, '· 累计 token 会按对话持续累加并保存到本机；本次为当前会话。')
     ),
     el('div', { className: 'dsh-muted' }, '余额来自 DeepSeek 开放平台 user/balance 接口。')
   )
@@ -145,8 +150,13 @@ function UpdateSection() {
         github.ok
           ? el('div', {},
               el('div', { className: 'dsh-row' }, el('span', { className: 'dsh-label' }, '最新版本'), el('span', { className: 'dsh-value' }, github.tag)),
-              el('div', { className: 'dsh-row' }, el('span', { className: 'dsh-label' }, '说明'), el('span', { className: 'dsh-value' }, github.name || '-')))
-          : el('div', { className: 'dsh-muted' }, '暂无 GitHub 发布，或无法连接 GitHub。')),
+              el('div', { className: 'dsh-row' }, el('span', { className: 'dsh-label' }, '说明'), el('span', { className: 'dsh-value' }, github.name || '-')),
+              github.html
+                ? el('a', { href: github.html, target: '_blank', rel: 'noreferrer', className: 'dsh-link', style: { display: 'inline-block', marginTop: '8px' } }, '前往 GitHub 查看发布')
+                : null)
+          : github.noRelease
+            ? el('div', { className: 'dsh-muted' }, 'GitHub 仓库还没有发布版本（Release）。')
+            : el('div', { className: 'dsh-err' }, '无法连接到 GitHub（网络不通）。')),
       state.updated ? el('div', { className: 'dsh-ok', style: { paddingTop: '8px' } }, '更新完成，请重启生效。') : null
     )
   }

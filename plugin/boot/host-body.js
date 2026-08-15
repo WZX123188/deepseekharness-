@@ -143,7 +143,7 @@ const REGISTRY_LATEST = 'https://registry.npmmirror.com/' + PKG.replace('/', '%2
 const CURRENT_VERSION = '0.1.0-rc.6'
 const GITHUB_RELEASES = 'https://api.github.com/repos/WZX123188/deepseekharness-/releases/latest'
 function latestScript() { return "(async()=>{const r=await fetch('" + REGISTRY_LATEST + "');const j=await r.json();console.log(String(j.version||''))})().catch(e=>{console.error(String((e&&e.stack)||e));process.exit(1)})" }
-function githubScript() { return "(async()=>{const r=await fetch('" + GITHUB_RELEASES + "',{headers:{'User-Agent':'dsh-client'}});const j=await r.json();console.log(JSON.stringify({tag:(j&&j.tag_name)||'',name:(j&&j.name)||'',html:(j&&j.html_url)||''}))})().catch(e=>{console.error(String((e&&e.stack)||e));process.exit(1)})" }
+function githubScript() { return "(async()=>{try{const r=await fetch('" + GITHUB_RELEASES + "',{headers:{'User-Agent':'dsh-client'}});if(r.status===404){console.log(JSON.stringify({tag:'',name:'',html:'',status:404}));return}const j=await r.json();console.log(JSON.stringify({tag:(j&&j.tag_name)||'',name:(j&&j.name)||'',html:(j&&j.html_url)||'',status:r.status}))}catch(e){console.log(JSON.stringify({tag:'',name:'',html:'',status:0,error:String((e&&e.message)||e)}))}})()" }
 function applyUpdate(ctx) {
   const subprocess = ctx.get('subprocess')
   if (subprocess === undefined) return
@@ -161,14 +161,14 @@ function applyUpdate(ctx) {
       const { stdout } = await collect(h1)
       const officialLatest = stdout.trim().split(/\r?\n/).filter(Boolean).pop() || ''
       // GitHub
-      let github = { tag: '', name: '', html: '', ok: false }
+      let github = { tag: '', name: '', html: '', ok: false, noRelease: false, unreachable: false }
       try {
         const h2 = subprocess.spawn({ argv: [nodePath, '-e', githubScript()], cwd: 'C:\\Users\\WZX', stdio: { stdin: 'ignore', stdout: { maxBytes: 16384 }, stderr: { maxBytes: 16384 } }, graceMs: 20000 })
         const g = await collect(h2)
         const glast = g.stdout.trim().split(/\r?\n/).filter(Boolean).pop() || ''
         const parsed = JSON.parse(glast)
-        github = { tag: parsed.tag, name: parsed.name, html: parsed.html, ok: parsed.tag !== '' }
-      } catch (e) { github = { tag: '', name: '', html: '', ok: false } }
+        github = { tag: parsed.tag || '', name: parsed.name || '', html: parsed.html || '', ok: parsed.tag !== '', noRelease: parsed.status === 404, unreachable: parsed.status === 0 }
+      } catch (e) { github = { tag: '', name: '', html: '', ok: false, noRelease: false, unreachable: true } }
       return {
         ok: true,
         official: { current: CURRENT_VERSION, latest: officialLatest, hasUpdate: officialLatest !== '' && officialLatest !== CURRENT_VERSION },
@@ -296,24 +296,58 @@ function applyProjects(ctx) {
   })
 }
 
-// ===== 本地 token 用量 =====
+// ===== 本地 token 用量（持久化累加） =====
+const USAGE_PATH = 'C:\\Users\\WZX\\.dsh\\dsh-client-usage.json'
+
+async function readUsageFile(subprocess) {
+  try {
+    const nodePath = await subprocess.resolveExecutable('node')
+    const script = "try{console.log(require('fs').readFileSync(process.env.DSH_U,'utf8'))}catch(e){console.log('{}')}"
+    const handle = subprocess.spawn({ argv: [nodePath, '-e', script], cwd: 'C:\\Users\\WZX', stdio: { stdin: 'ignore', stdout: { maxBytes: 131072 }, stderr: { maxBytes: 131072 } }, graceMs: 8000, env: { DSH_U: USAGE_PATH } })
+    await handle.waitForExit()
+    const out = handle.collected.stdout ? handle.collected.stdout.readFrom(0).text : ''
+    return JSON.parse(out.trim() || '{}')
+  } catch (e) { return {} }
+}
+
+async function writeUsageFile(subprocess, obj) {
+  try {
+    const nodePath = await subprocess.resolveExecutable('node')
+    const script = "try{require('fs').writeFileSync(process.env.DSH_U, process.env.DSH_V)}catch(e){console.error(e)}"
+    const handle = subprocess.spawn({ argv: [nodePath, '-e', script], cwd: 'C:\\Users\\WZX', stdio: { stdin: 'ignore', stdout: { maxBytes: 131072 }, stderr: { maxBytes: 131072 } }, graceMs: 8000, env: { DSH_U: USAGE_PATH, DSH_V: JSON.stringify(obj) } })
+    await handle.waitForExit()
+  } catch (e) {}
+}
+
 function applyUsage(ctx) {
   const tokenMeter = ctx.get('tokenMeter')
   const sessions = ctx.get('sessions')
-  if (tokenMeter === undefined || sessions === undefined) return
+  const subprocess = ctx.get('subprocess')
+  if (tokenMeter === undefined || sessions === undefined || subprocess === undefined) return
   harness.handle('get-usage', async () => {
     try {
       const list = sessions.list()
-      let total = 0
-      let count = 0
+      let currentTotal = 0
+      const currentSessions = {}
       for (let i = 0; i < list.length; i++) {
         try {
           const m = tokenMeter.measure(list[i])
-          total += (m && m.totalTokens) || 0
-          count++
+          const t = (m && m.totalTokens) || 0
+          currentTotal += t
+          const sid = (list[i].id !== undefined) ? String(list[i].id) : ('s' + i)
+          currentSessions[sid] = t
         } catch (e) {}
       }
-      return { ok: true, totalTokens: total, sessionCount: count }
+      const file = await readUsageFile(subprocess)
+      const merged = file.sessions || {}
+      for (const sid in currentSessions) {
+        merged[sid] = Math.max(merged[sid] || 0, currentSessions[sid])
+      }
+      await writeUsageFile(subprocess, { sessions: merged })
+      let totalTokens = 0
+      const sessionIds = Object.keys(merged)
+      for (let i = 0; i < sessionIds.length; i++) totalTokens += merged[sessionIds[i]] || 0
+      return { ok: true, currentTokens: currentTotal, totalTokens: totalTokens, sessionCount: sessionIds.length }
     } catch (error) {
       return { ok: false, error: String((error && error.message) || error) }
     }
