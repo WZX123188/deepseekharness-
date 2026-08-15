@@ -41,6 +41,7 @@ function startDsh() {
     cwd: 'C:\\Users\\WZX',
     stdio: ['ignore', logFd, logFd],
     env: process.env,
+    windowsHide: true,
   })
   dshProc.on('exit', function () { dshProc = null })
 }
@@ -55,6 +56,7 @@ function ensureDsh(cb) {
       cwd: 'C:\\Users\\WZX',
       stdio: 'ignore',
       env: process.env,
+      windowsHide: true,
     })
   } catch (e) { return cb(e) }
   proc.on('exit', function (code) {
@@ -164,6 +166,7 @@ if (!gotLock) {
   app.on('second-instance', function () { showWin() })
 
   app.whenReady().then(function () {
+    Menu.setApplicationMenu(null)  // 去掉顶部 File/Edit 菜单栏
     try { fs.unlinkSync(MARKER) } catch (e) {}  // 清残留标记，防止启动即置顶
     createTray()
     try { globalShortcut.register('CommandOrControl+Alt+D', function () { toggleWin() }) } catch (e) {}
