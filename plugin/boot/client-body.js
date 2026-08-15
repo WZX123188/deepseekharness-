@@ -34,6 +34,9 @@ function BalanceSection() {
   var p = React.useState({ status: 'idle' })
   var state = p[0]
   var setState = p[1]
+  var up = React.useState(null)
+  var usage = up[0]
+  var setUsage = up[1]
   function load() {
     setState({ status: 'loading' })
     host.call('deepseek-balance').then(function (res) {
@@ -47,6 +50,9 @@ function BalanceSection() {
     }).catch(function (e) {
       setState({ status: 'error', error: String((e && e.message) || e) })
     })
+    host.call('get-usage').then(function (res) {
+      setUsage((res && res.ok) ? res : null)
+    }).catch(function () { setUsage(null) })
   }
   React.useEffect(function () { load() }, [])
 
@@ -77,7 +83,15 @@ function BalanceSection() {
       el('button', { className: 'dsh-btn ghost', onClick: load }, '刷新')
     ),
     body,
-    el('div', { className: 'dsh-muted' }, '余额来自 DeepSeek 开放平台 user/balance 接口。token 用量无官方 API，本地用量统计将在后续版本提供。')
+    el('div', { className: 'dsh-card' },
+      el('div', { className: 'dsh-h2', style: { marginBottom: '8px' } }, '本机 token 用量'),
+      usage ? el('div', {},
+        el('div', { className: 'dsh-row' }, el('span', { className: 'dsh-label' }, '累计 token'), el('span', { className: 'dsh-value' }, usage.totalTokens)),
+        el('div', { className: 'dsh-row' }, el('span', { className: 'dsh-label' }, '会话数'), el('span', { className: 'dsh-value' }, usage.sessionCount))
+      ) : el('div', { className: 'dsh-muted' }, '暂无数据'),
+      el('div', { className: 'dsh-muted', style: { marginTop: '8px' } }, '数据来源：本地 token-meter 估算；范围：仅本机当前已加载会话，非平台账单。')
+    ),
+    el('div', { className: 'dsh-muted' }, '余额来自 DeepSeek 开放平台 user/balance 接口。')
   )
 }
 

@@ -296,11 +296,36 @@ function applyProjects(ctx) {
   })
 }
 
+// ===== 本地 token 用量 =====
+function applyUsage(ctx) {
+  const tokenMeter = ctx.get('tokenMeter')
+  const sessions = ctx.get('sessions')
+  if (tokenMeter === undefined || sessions === undefined) return
+  harness.handle('get-usage', async () => {
+    try {
+      const list = sessions.list()
+      let total = 0
+      let count = 0
+      for (let i = 0; i < list.length; i++) {
+        try {
+          const m = tokenMeter.measure(list[i])
+          total += (m && m.totalTokens) || 0
+          count++
+        } catch (e) {}
+      }
+      return { ok: true, totalTokens: total, sessionCount: count }
+    } catch (error) {
+      return { ok: false, error: String((error && error.message) || error) }
+    }
+  })
+}
+
 return {
   apply(ctx) {
     applyGate(ctx)
     applyPermission(ctx)
     applyBalance(ctx)
+    applyUsage(ctx)
     applyUpdate(ctx)
     applyTools(ctx)
     applyPlugins(ctx)
