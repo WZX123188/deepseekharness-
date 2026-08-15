@@ -354,6 +354,29 @@ function applyUsage(ctx) {
   })
 }
 
+// ===== 意见区：提交反馈到 GitHub Issue =====
+const FEEDBACK_REPO = 'WZX123188/deepseekharness-'
+function applyFeedback(ctx) {
+  const subprocess = ctx.get('subprocess')
+  if (subprocess === undefined) return
+  harness.handle('open-feedback', async (args) => {
+    try {
+      const type = args && args.type
+      const title = args && args.title
+      const body = args && args.body
+      if (typeof title !== 'string' || title.trim() === '') return { ok: false, error: '标题不能为空' }
+      const typeLabel = (type === 'bug') ? '问题反馈' : (type === 'idea' ? '功能建议' : '反馈')
+      const fullTitle = '[' + typeLabel + '] ' + title.trim()
+      const bodyText = (typeof body === 'string' ? body : '') + '\n\n---\n（由 DSH 客户端意见区提交）'
+      const url = 'https://github.com/' + FEEDBACK_REPO + '/issues/new?title=' + encodeURIComponent(fullTitle) + '&body=' + encodeURIComponent(bodyText) + '&labels=' + encodeURIComponent('反馈')
+      const cmdPath = await subprocess.resolveExecutable('cmd.exe')
+      const handle = subprocess.spawn({ argv: [cmdPath, '/c', 'start', '', url], cwd: 'C:\\Users\\WZX', stdio: { stdin: 'ignore', stdout: { maxBytes: 4096 }, stderr: { maxBytes: 4096 } }, graceMs: 8000 })
+      await handle.waitForExit()
+      return { ok: true }
+    } catch (error) { return { ok: false, error: String((error && error.message) || error) } }
+  })
+}
+
 return {
   apply(ctx) {
     applyGate(ctx)
@@ -364,5 +387,6 @@ return {
     applyTools(ctx)
     applyPlugins(ctx)
     applyProjects(ctx)
+    applyFeedback(ctx)
   },
 }

@@ -25,6 +25,8 @@ var CSS = [
   '.dsh-muted{opacity:.6;font-size:13px;line-height:1.5}',
   '.dsh-note{opacity:.45;font-size:11px;line-height:1.5;color:inherit}',
   '.dsh-search{width:100%;padding:8px 12px;border-radius:8px;border:1px solid rgba(127,127,127,.3);background:transparent;color:inherit;margin-bottom:10px}',
+  '.dsh-input{background:transparent;border:1px solid rgba(127,127,127,.3);border-radius:8px;padding:8px 12px;color:inherit;font-size:13px;width:100%}',
+  '.dsh-select{background:transparent;border:1px solid rgba(127,127,127,.3);border-radius:8px;padding:6px 10px;color:inherit;font-size:13px}',
   '.dsh-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}',
   '.dsh-tab{padding:6px 14px;border-radius:16px;border:1px solid rgba(127,127,127,.25);cursor:pointer;font-size:13px;background:transparent;color:inherit}',
   '.dsh-tab.active{background:' + BLUE + ';color:#fff;border-color:' + BLUE + '}',
@@ -390,6 +392,43 @@ function ProjectsSection() {
     el('div', { className: 'dsh-muted' }, '项目即工作区：一个文件夹对应一个项目，会话与文件按项目隔离。'))
 }
 
+function FeedbackSection() {
+  var t = React.useState('idea')
+  var type = t[0]; var setType = t[1]
+  var ti = React.useState('')
+  var title = ti[0]; var setTitle = ti[1]
+  var b = React.useState('')
+  var body = b[0]; var setBody = b[1]
+  var s = React.useState('')
+  var status = s[0]; var setStatus = s[1]
+  function submit() {
+    if (!title.trim()) { setStatus('请先填写标题'); return }
+    setStatus('正在打开 GitHub 提交页…')
+    host.call('open-feedback', { type: type, title: title, body: body }).then(function (res) {
+      if (res && res.ok) setStatus('已在浏览器打开 GitHub 提交页，请在页面上点击「Submit new issue」完成发布。')
+      else setStatus((res && res.error) || '打开失败')
+    }).catch(function (e) { setStatus(String((e && e.message) || e)) })
+  }
+  return el('div', { className: 'dsh-page' },
+    el('div', { className: 'dsh-head' }, el('h2', { className: 'dsh-h2' }, '意见区')),
+    el('div', { className: 'dsh-card' },
+      el('div', { className: 'dsh-row' },
+        el('span', { className: 'dsh-label' }, '类型'),
+        el('select', { value: type, onChange: function (e) { setType(e.target.value) }, className: 'dsh-select' },
+          el('option', { value: 'idea' }, '功能建议'),
+          el('option', { value: 'bug' }, '问题反馈'),
+          el('option', { value: 'other' }, '其他'))),
+      el('div', { className: 'dsh-row' },
+        el('span', { className: 'dsh-label' }, '标题'),
+        el('input', { value: title, onChange: function (e) { setTitle(e.target.value) }, placeholder: '一句话说明', className: 'dsh-input', style: { flex: 1 } })),
+      el('div', { style: { padding: '8px 0' } },
+        el('textarea', { value: body, onChange: function (e) { setBody(e.target.value) }, placeholder: '详细描述你的建议或问题…', rows: 6, className: 'dsh-input' })),
+      el('div', { style: { paddingTop: '8px' } },
+        el('button', { className: 'dsh-btn', onClick: submit }, '提交到 GitHub'),
+        status ? el('div', { className: 'dsh-muted', style: { marginTop: '8px' } }, status) : null)),
+    el('div', { className: 'dsh-muted' }, '提交后会打开 GitHub 的 Issue 提交页，需你登录 GitHub 账号后点确认发布；本机不保存任何账号信息。'))
+}
+
 return {
   apply(ctx) {
     var slots = ctx.get('slots')
@@ -433,6 +472,12 @@ return {
     })
     slots.inject('settings.section', function () {
       return slots.register(
+        { name: 'settings.section', id: 'dsh-feedback', order: 46, label: '意见区' },
+        function () { return React.createElement(FeedbackSection) }
+      )
+    })
+    slots.inject('settings.section', function () {
+      return slots.register(
         { name: 'settings.section', id: 'dsh-permission', order: 6, label: '权限' },
         function () { return React.createElement(PermissionSection) }
       )
@@ -442,7 +487,7 @@ return {
       return slots.register(
         { name: 'sidebar.footer.action', id: 'dsh-features', order: 5, label: '功能' },
         function () {
-          return el('button', { title: '功能都在 设置 里：项目 / 权限 / 余额 / Tool 市场 / Plugin 市场 / 检查更新 / 使用指南', style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: '6px 10px', borderRadius: '8px', fontSize: '13px', color: 'inherit' } }, '功能')
+          return el('button', { title: '功能都在 设置 里：项目 / 权限 / 余额 / Tool 市场 / Plugin 市场 / 检查更新 / 使用指南 / 意见区', style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: '6px 10px', borderRadius: '8px', fontSize: '13px', color: 'inherit' } }, '功能')
         }
       )
     })
