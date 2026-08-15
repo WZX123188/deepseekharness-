@@ -354,6 +354,38 @@ function applyUsage(ctx) {
   })
 }
 
+// ===== 神奇小开关：DSV4 Pro（满血）+ 极简模式 =====
+const MAGIC_PROVIDER = 'deepseek-official'
+const MAGIC_MODEL = 'deepseek-v4-pro'
+const NORMAL_MODEL = 'deepseek-v4-flash'
+function applyMagicSwitch(ctx) {
+  const settings = ctx.get('settings')
+  const agentDefaultModel = ctx.get('agentDefaultModel')
+  if (settings === undefined || agentDefaultModel === undefined) return
+  harness.handle('get-magic-switch', async () => {
+    try {
+      const presetSettings = settings.get('agent-presets')
+      const preset = (presetSettings && presetSettings.default) || 'standard'
+      const sel = agentDefaultModel.currentSelection()
+      const model = (sel && sel.model) || ''
+      return { ok: true, preset: preset, model: model, on: (preset === 'minimal' && model === MAGIC_MODEL) }
+    } catch (error) { return { ok: false, error: String((error && error.message) || error) } }
+  })
+  harness.handle('set-magic-switch', async (args) => {
+    try {
+      const on = args && args.on
+      if (on) {
+        await settings.update('agent-presets', { default: 'minimal' })
+        await agentDefaultModel.saveSelection({ provider: MAGIC_PROVIDER, model: MAGIC_MODEL })
+      } else {
+        await settings.update('agent-presets', { default: 'standard' })
+        await agentDefaultModel.saveSelection({ provider: MAGIC_PROVIDER, model: NORMAL_MODEL })
+      }
+      return { ok: true }
+    } catch (error) { return { ok: false, error: String((error && error.message) || error) } }
+  })
+}
+
 // ===== 意见区：提交反馈到 GitHub Issue =====
 const FEEDBACK_REPO = 'WZX123188/deepseekharness-'
 function applyFeedback(ctx) {
@@ -387,6 +419,7 @@ return {
     applyTools(ctx)
     applyPlugins(ctx)
     applyProjects(ctx)
+    applyMagicSwitch(ctx)
     applyFeedback(ctx)
   },
 }

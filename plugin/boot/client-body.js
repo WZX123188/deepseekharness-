@@ -392,6 +392,44 @@ function ProjectsSection() {
     el('div', { className: 'dsh-muted' }, '项目即工作区：一个文件夹对应一个项目，会话与文件按项目隔离。'))
 }
 
+function MagicSwitchSection() {
+  var s = React.useState({ status: 'loading', on: false, preset: '', model: '' })
+  var state = s[0]; var setState = s[1]
+  var b = React.useState(false)
+  var busy = b[0]; var setBusy = b[1]
+  function load() {
+    setState({ status: 'loading', on: false, preset: '', model: '' })
+    host.call('get-magic-switch').then(function (res) {
+      if (res && res.ok) setState({ status: 'ok', on: res.on, preset: res.preset, model: res.model })
+      else setState({ status: 'error', on: false, preset: '', model: '', error: (res && res.error) || '未知错误' })
+    }).catch(function (e) { setState({ status: 'error', on: false, preset: '', model: '', error: String((e && e.message) || e) }) })
+  }
+  function toggle() {
+    var target = !state.on
+    setBusy(true)
+    host.call('set-magic-switch', { on: target }).then(function (res) {
+      setBusy(false)
+      if (res && res.ok) load()
+      else setState({ status: 'error', on: state.on, preset: state.preset, model: state.model, error: (res && res.error) || '切换失败' })
+    }).catch(function (e) { setBusy(false); setState({ status: 'error', on: state.on, preset: state.preset, model: state.model, error: String((e && e.message) || e) }) })
+  }
+  React.useEffect(function () { load() }, [])
+  var modelName = state.model === 'deepseek-v4-pro' ? 'DeepSeek-V4-Pro' : (state.model === 'deepseek-v4-flash' ? 'DeepSeek-V4-Flash' : (state.model || '-'))
+  var presetName = state.preset === 'minimal' ? '极简模式' : (state.preset === 'standard' ? '标准模式' : (state.preset || '-'))
+  return el('div', { className: 'dsh-page' },
+    el('div', { className: 'dsh-head' }, el('h2', { className: 'dsh-h2' }, '神奇小开关')),
+    el('div', { className: 'dsh-card' },
+      el('div', { className: 'dsh-row' },
+        el('div', {},
+          el('div', { className: 'dsh-value' }, state.on ? '已开启' : '已关闭'),
+          el('div', { className: 'dsh-muted' }, '开启后，新会话自动使用 DeepSeek-V4-Pro（满血）+ 极简模式。')),
+        el('button', { className: state.on ? 'dsh-btn' : 'dsh-btn ghost', onClick: toggle, disabled: busy || state.status === 'loading' }, busy ? '切换中…' : (state.on ? '关闭' : '开启'))),
+      el('div', { className: 'dsh-row' }, el('span', { className: 'dsh-label' }, '当前预设'), el('span', { className: 'dsh-value' }, presetName)),
+      el('div', { className: 'dsh-row' }, el('span', { className: 'dsh-label' }, '默认模型'), el('span', { className: 'dsh-value' }, modelName)),
+      state.status === 'error' ? el('div', { className: 'dsh-err', style: { paddingTop: '8px' } }, state.error) : null),
+    el('div', { className: 'dsh-muted' }, '说明：社区「神奇小开关」玩法——极简模式是只保留核心工具（bash + 编辑器）的轻量 Agent，配合 V4 Pro 可激发更强能力、更省 token。已开始的会话保持原样，新会话生效。'))
+}
+
 function FeedbackSection() {
   var t = React.useState('idea')
   var type = t[0]; var setType = t[1]
@@ -474,6 +512,12 @@ return {
       return slots.register(
         { name: 'settings.section', id: 'dsh-feedback', order: 46, label: '意见区' },
         function () { return React.createElement(FeedbackSection) }
+      )
+    })
+    slots.inject('settings.section', function () {
+      return slots.register(
+        { name: 'settings.section', id: 'dsh-magic-switch', order: 5, label: '神奇小开关' },
+        function () { return React.createElement(MagicSwitchSection) }
       )
     })
     slots.inject('settings.section', function () {
