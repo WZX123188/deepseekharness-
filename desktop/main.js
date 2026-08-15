@@ -63,6 +63,29 @@ function ensureDsh(cb) {
   proc.on('error', function (e) { cb(e) })
 }
 
+// 首次运行：把内置的功能插件装进用户 profile，并写挂载补丁
+function ensureFeatures(cb) {
+  try {
+    const home = process.env.USERPROFILE || 'C:\\Users\\WZX'
+    const profileDir = path.join(home, '.dsh', 'profiles', 'web')
+    const bootSrc = path.join(__dirname, 'boot')
+    const bootDst = path.join(profileDir, 'node_modules', 'dsh-client-boot')
+    fs.mkdirSync(bootDst, { recursive: true })
+    const files = ['package.json', 'index.js', 'host-body.js', 'client-body.js']
+    for (let i = 0; i < files.length; i++) {
+      const s = path.join(bootSrc, files[i])
+      if (fs.existsSync(s)) fs.copyFileSync(s, path.join(bootDst, files[i]))
+    }
+    const pkgPath = path.join(profileDir, 'package.json')
+    if (!fs.existsSync(pkgPath)) {
+      fs.mkdirSync(profileDir, { recursive: true })
+      fs.writeFileSync(pkgPath, JSON.stringify({ name: 'dsh-profile-web', private: true, dependencies: {}, dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'] } } }, null, 2))
+    }
+    fs.writeFileSync(path.join(profileDir, 'cordis.patch.yml'), '- insert:\n    - id: dsh-client-boot\n      name: dsh-client-boot\n')
+    cb(null)
+  } catch (e) { cb(e) }
+}
+
 function showWin() {
   if (!win || win.isDestroyed()) return
   win.show()
@@ -149,15 +172,22 @@ if (!gotLock) {
         app.quit()
         return
       }
-      startDsh()
-      waitForServer(function (e2) {
-        if (e2) {
-          console.error('[dsh-client] ' + e2.message)
+      ensureFeatures(function (err2) {
+        if (err2) {
+          console.error('[dsh-client] ' + (err2 && err2.message || err2))
           app.quit()
           return
         }
-        createWindow()
-        pollMarker()
+        startDsh()
+        waitForServer(function (e3) {
+          if (e3) {
+            console.error('[dsh-client] ' + e3.message)
+            app.quit()
+            return
+          }
+          createWindow()
+          pollMarker()
+        })
       })
     })
   })
