@@ -1,4 +1,8 @@
 # 自定义：安装时让用户勾选是否创建快捷方式
+!include "LogicLib.nsh"
+!include "nsDialogs.nsh"
+!include "WinMessages.nsh"
+
 Var dshDesktopChecked
 Var dshStartMenuChecked
 
