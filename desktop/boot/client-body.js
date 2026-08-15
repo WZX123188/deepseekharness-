@@ -217,6 +217,7 @@ function ToolsSection() {
               el('div', { style: { flex: 1 } },
                 el('div', { className: 'dsh-value' }, tool.name),
                 el('div', { className: 'dsh-muted' }, tool.desc),
+                el('div', { className: 'dsh-muted', style: { fontSize: '11px' } }, tool.note),
                 el('div', { className: 'dsh-muted', style: { fontSize: '11px' } }, tool.pkg)),
               tool.installed
                 ? el('span', { className: 'dsh-ok' }, '已安装')
@@ -231,7 +232,66 @@ function ToolsSection() {
       el('h2', { className: 'dsh-h2' }, '工具市场'),
       el('button', { className: 'dsh-btn ghost', onClick: load }, '刷新')),
     body,
-    el('div', { className: 'dsh-muted' }, '点击「安装」即可一键安装工具；后续版本将支持直接接入 MCP 客户端。'))
+    el('div', { className: 'dsh-muted' }, '点击「安装」即可一键安装工具；均为官方/大厂可信来源。'))
+}
+
+function PluginsSection() {
+  var p = React.useState({ status: 'idle', cats: null, error: null })
+  var state = p[0]
+  var setState = p[1]
+  var ip = React.useState(null)
+  var installingPkg = ip[0]
+  var setInstallingPkg = ip[1]
+  function load() {
+    setState({ status: 'loading', cats: null, error: null })
+    host.call('list-plugins').then(function (res) {
+      if (res && res.ok) setState({ status: 'ok', cats: res.categories, error: null })
+      else setState({ status: 'error', cats: null, error: (res && res.error) || '未知错误' })
+    }).catch(function (e) {
+      setState({ status: 'error', cats: null, error: String((e && e.message) || e) })
+    })
+  }
+  function install(plug) {
+    setInstallingPkg(plug.pkg)
+    host.call('install-plugin', { pkg: plug.pkg }).then(function () {
+      setInstallingPkg(null)
+      load()
+    }).catch(function () {
+      setInstallingPkg(null)
+      load()
+    })
+  }
+  React.useEffect(function () { load() }, [])
+
+  var body
+  if (state.status === 'loading') body = el('div', { className: 'dsh-muted' }, '正在加载插件列表…')
+  else if (state.status === 'error') body = el('div', { className: 'dsh-err' }, state.error)
+  else if (state.status === 'ok' && state.cats) {
+    body = state.cats.map(function (cat) {
+      return el('div', { key: cat.name },
+        el('div', { className: 'dsh-h2', style: { margin: '14px 0 6px' } }, cat.name),
+        cat.items.map(function (plug) {
+          return el('div', { className: 'dsh-card', key: plug.id, style: { padding: '12px', marginBottom: '8px' } },
+            el('div', { className: 'dsh-row' },
+              el('div', { style: { flex: 1 } },
+                el('div', { className: 'dsh-value' }, plug.name),
+                el('div', { className: 'dsh-muted' }, plug.desc),
+                el('div', { className: 'dsh-muted', style: { fontSize: '11px' } }, plug.note),
+                el('div', { className: 'dsh-muted', style: { fontSize: '11px' } }, plug.pkg)),
+              plug.installed
+                ? el('span', { className: 'dsh-ok' }, '已安装')
+                : el('button', { className: 'dsh-btn', onClick: function () { install(plug) }, disabled: installingPkg === plug.pkg }, installingPkg === plug.pkg ? '安装中…' : '安装')))
+        })
+      )
+    })
+  }
+
+  return el('div', { className: 'dsh-page' },
+    el('div', { className: 'dsh-head' },
+      el('h2', { className: 'dsh-h2' }, '插件市场'),
+      el('button', { className: 'dsh-btn ghost', onClick: load }, '刷新')),
+    body,
+    el('div', { className: 'dsh-muted' }, '插件 = 扩展 harness 本身的能力（区别于工具）；均为官方可信来源。'))
 }
 
 function ApiSection() {
@@ -390,6 +450,12 @@ return {
     })
     slots.inject('settings.section', function () {
       return slots.register(
+        { name: 'settings.section', id: 'dsh-plugins', order: 36, label: '插件市场' },
+        function () { return React.createElement(PluginsSection) }
+      )
+    })
+    slots.inject('settings.section', function () {
+      return slots.register(
         { name: 'settings.section', id: 'dsh-guide', order: 45, label: '使用指南' },
         function () { return React.createElement(GuideSection) }
       )
@@ -398,6 +464,15 @@ return {
       return slots.register(
         { name: 'settings.section', id: 'dsh-permission', order: 6, label: '权限' },
         function () { return React.createElement(PermissionSection) }
+      )
+    })
+    // 侧边栏底部的「功能」入口，提示功能在设置中
+    slots.inject('sidebar.footer.action', function () {
+      return slots.register(
+        { name: 'sidebar.footer.action', id: 'dsh-features', order: 5, label: '功能' },
+        function () {
+          return el('button', { title: '功能都在 设置 里：项目 / API 管理 / 权限 / 余额 / 工具市场 / 插件市场 / 检查更新 / 使用指南', style: { background: 'transparent', border: 'none', cursor: 'pointer', padding: '6px 10px', borderRadius: '8px', fontSize: '13px', color: 'inherit' } }, '功能')
+        }
       )
     })
   },
