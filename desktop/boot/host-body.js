@@ -212,9 +212,34 @@ const TOOLS = [
 const PLUGINS = [
   { id: 'plg-mcp', name: 'MCP 客户端', category: '协议接入', desc: '接入 MCP 协议，管理 MCP 服务器', note: '来自 DeepSeek', pkg: '@deepseek-ai/dsh-mcp-client' },
 ]
-function applyTools(ctx) {
+// ===== 市场状态（启用/禁用持久化） =====
+const MARKET_PATH = 'C:\\Users\\WZX\\.dsh\\dsh-market.json'
+
+async function readMarketFile(subprocess) {
+  try {
+    const nodePath = await subprocess.resolveExecutable('node')
+    const script = "try{console.log(require('fs').readFileSync(process.env.DSH_M,'utf8'))}catch(e){console.log('{}')}"
+    const handle = subprocess.spawn({ argv: [nodePath, '-e', script], cwd: 'C:\\Users\\WZX', stdio: { stdin: 'ignore', stdout: { maxBytes: 65536 }, stderr: { maxBytes: 65536 } }, graceMs: 8000, env: { DSH_M: MARKET_PATH } })
+    await handle.waitForExit()
+    const out = handle.collected.stdout ? handle.collected.stdout.readFrom(0).text : ''
+    return JSON.parse(out.trim() || '{}')
+  } catch (e) { return {} }
+}
+
+async function writeMarketFile(subprocess, obj) {
+  try {
+    const nodePath = await subprocess.resolveExecutable('node')
+    const script = "try{require('fs').writeFileSync(process.env.DSH_M, process.env.DSH_V)}catch(e){console.error(e)}"
+    const handle = subprocess.spawn({ argv: [nodePath, '-e', script], cwd: 'C:\\Users\\WZX', stdio: { stdin: 'ignore', stdout: { maxBytes: 65536 }, stderr: { maxBytes: 65536 } }, graceMs: 8000, env: { DSH_M: MARKET_PATH, DSH_V: JSON.stringify(obj) } })
+    await handle.waitForExit()
+  } catch (e) {}
+}
+
+// ===== Tool / Plugin 市场（安装=下载 + 启用/禁用 + 卸载） =====
+function applyMarket(ctx, kind, items) {
   const subprocess = ctx.get('subprocess')
   if (subprocess === undefined) return
+  const plural = kind + 's'
   async function runNpm(args, graceMs) {
     const cmdPath = await subprocess.resolveExecutable('cmd.exe')
     const handle = subprocess.spawn({ argv: [cmdPath, '/c', 'npm'].concat(args), cwd: 'C:\\Users\\WZX', stdio: { stdin: 'ignore', stdout: { maxBytes: 262144 }, stderr: { maxBytes: 262144 } }, graceMs: graceMs || 30000 })
@@ -223,11 +248,20 @@ function applyTools(ctx) {
     const stderr = handle.collected.stderr ? handle.collected.stderr.readFrom(0).text : ''
     return { stdout, stderr }
   }
-  harness.handle('list-tools', async () => {
+  async function listInstalled() {
+    try { const { stdout } = await runNpm(['ls', '-g', '--depth=0', '--json'], 30000); return (JSON.parse(stdout) && JSON.parse(stdout).dependencies) || {} } catch (e) { return {} }
+  }
+  function findById(id) { for (let i = 0; i < items.length; i++) if (items[i].id === id) return items[i]; return null }
+  function findByPkg(pkg) { for (let i = 0; i < items.length; i++) if (items[i].pkg === pkg) return items[i]; return null }
+  harness.handle('list-' + plural, async () => {
     try {
-      let installed = {}
-      try { const { stdout } = await runNpm(['ls', '-g', '--depth=0', '--json'], 30000); installed = (JSON.parse(stdout) && JSON.parse(stdout).dependencies) || {} } catch (e) { installed = {} }
-      const list = TOOLS.map(function (t) { return { id: t.id, name: t.name, category: t.category, desc: t.desc, note: t.note, pkg: t.pkg, installed: Object.prototype.hasOwnProperty.call(installed, t.pkg) } })
+      const installed = await listInstalled()
+      const market = await readMarketFile(subprocess)
+      const stateMap = market[plural] || {}
+      const list = items.map(function (t) {
+        const isInst = Object.prototype.hasOwnProperty.call(installed, t.pkg)
+        return { id: t.id, name: t.name, category: t.category, desc: t.desc, note: t.note, pkg: t.pkg, installed: isInst, enabled: isInst && stateMap[t.id] !== false }
+      })
       const categories = []
       const order = []
       list.forEach(function (t) { if (order.indexOf(t.category) === -1) order.push(t.category) })
@@ -235,49 +269,49 @@ function applyTools(ctx) {
       return { ok: true, categories }
     } catch (error) { return { ok: false, error: String((error && error.message) || error) } }
   })
-  harness.handle('install-tool', async (args) => {
+  harness.handle('install-' + kind, async (args) => {
     try {
-      const pkg = args && args.pkg
-      if (typeof pkg !== 'string' || pkg === '') return { ok: false, error: '缺少包名' }
-      const { stdout, stderr } = await runNpm(['install', '-g', pkg], 180000)
-      return { ok: true, pkg, stdout: stdout.slice(-2000), stderr: stderr.slice(-2000) }
+      const item = findById(args && args.id) || findByPkg(args && args.pkg)
+      if (item === null) return { ok: false, error: '未知条目' }
+      const { stdout, stderr } = await runNpm(['install', '-g', item.pkg], 180000)
+      const market = await readMarketFile(subprocess)
+      const map = market[plural] || {}
+      map[item.id] = true
+      market[plural] = map
+      await writeMarketFile(subprocess, market)
+      return { ok: true, pkg: item.pkg, stdout: stdout.slice(-2000), stderr: stderr.slice(-2000) }
+    } catch (error) { return { ok: false, error: String((error && error.message) || error) } }
+  })
+  harness.handle('set-' + kind + '-enabled', async (args) => {
+    try {
+      const item = findById(args && args.id)
+      if (item === null) return { ok: false, error: '未知条目' }
+      const enabled = !!(args && args.enabled)
+      const market = await readMarketFile(subprocess)
+      const map = market[plural] || {}
+      map[item.id] = enabled
+      market[plural] = map
+      await writeMarketFile(subprocess, market)
+      return { ok: true, id: item.id, enabled: enabled }
+    } catch (error) { return { ok: false, error: String((error && error.message) || error) } }
+  })
+  harness.handle('uninstall-' + kind, async (args) => {
+    try {
+      const item = findById(args && args.id)
+      if (item === null) return { ok: false, error: '未知条目' }
+      const { stdout, stderr } = await runNpm(['uninstall', '-g', item.pkg], 180000)
+      const market = await readMarketFile(subprocess)
+      const map = market[plural] || {}
+      delete map[item.id]
+      market[plural] = map
+      await writeMarketFile(subprocess, market)
+      return { ok: true, id: item.id, stdout: stdout.slice(-2000), stderr: stderr.slice(-2000) }
     } catch (error) { return { ok: false, error: String((error && error.message) || error) } }
   })
 }
 
-// ===== 插件市场 =====
-function applyPlugins(ctx) {
-  const subprocess = ctx.get('subprocess')
-  if (subprocess === undefined) return
-  async function runNpm(args, graceMs) {
-    const cmdPath = await subprocess.resolveExecutable('cmd.exe')
-    const handle = subprocess.spawn({ argv: [cmdPath, '/c', 'npm'].concat(args), cwd: 'C:\\Users\\WZX', stdio: { stdin: 'ignore', stdout: { maxBytes: 262144 }, stderr: { maxBytes: 262144 } }, graceMs: graceMs || 30000 })
-    await handle.waitForExit()
-    const stdout = handle.collected.stdout ? handle.collected.stdout.readFrom(0).text : ''
-    const stderr = handle.collected.stderr ? handle.collected.stderr.readFrom(0).text : ''
-    return { stdout, stderr }
-  }
-  harness.handle('list-plugins', async () => {
-    try {
-      let installed = {}
-      try { const { stdout } = await runNpm(['ls', '-g', '--depth=0', '--json'], 30000); installed = (JSON.parse(stdout) && JSON.parse(stdout).dependencies) || {} } catch (e) { installed = {} }
-      const list = PLUGINS.map(function (t) { return { id: t.id, name: t.name, category: t.category, desc: t.desc, note: t.note, pkg: t.pkg, installed: Object.prototype.hasOwnProperty.call(installed, t.pkg) } })
-      const categories = []
-      const order = []
-      list.forEach(function (t) { if (order.indexOf(t.category) === -1) order.push(t.category) })
-      order.forEach(function (cat) { categories.push({ name: cat, items: list.filter(function (t) { return t.category === cat }) }) })
-      return { ok: true, categories }
-    } catch (error) { return { ok: false, error: String((error && error.message) || error) } }
-  })
-  harness.handle('install-plugin', async (args) => {
-    try {
-      const pkg = args && args.pkg
-      if (typeof pkg !== 'string' || pkg === '') return { ok: false, error: '缺少包名' }
-      const { stdout, stderr } = await runNpm(['install', '-g', pkg], 180000)
-      return { ok: true, pkg, stdout: stdout.slice(-2000), stderr: stderr.slice(-2000) }
-    } catch (error) { return { ok: false, error: String((error && error.message) || error) } }
-  })
-}
+function applyTools(ctx) { applyMarket(ctx, 'tool', TOOLS) }
+function applyPlugins(ctx) { applyMarket(ctx, 'plugin', PLUGINS) }
 
 // ===== 项目区 =====
 function applyProjects(ctx) {

@@ -213,9 +213,9 @@ function ToolsSection() {
   var p = React.useState({ status: 'idle', cats: null, error: null })
   var state = p[0]
   var setState = p[1]
-  var ip = React.useState(null)
-  var installingPkg = ip[0]
-  var setInstallingPkg = ip[1]
+  var b = React.useState(null)
+  var busy = b[0]
+  var setBusy = b[1]
   function load() {
     setState({ status: 'loading', cats: null, error: null })
     host.call('list-tools').then(function (res) {
@@ -225,15 +225,9 @@ function ToolsSection() {
       setState({ status: 'error', cats: null, error: String((e && e.message) || e) })
     })
   }
-  function install(tool) {
-    setInstallingPkg(tool.pkg)
-    host.call('install-tool', { pkg: tool.pkg }).then(function () {
-      setInstallingPkg(null)
-      load()
-    }).catch(function () {
-      setInstallingPkg(null)
-      load()
-    })
+  function act(key, args) {
+    setBusy(args.id)
+    host.call(key, args).then(function () { setBusy(null); load() }).catch(function () { setBusy(null); load() })
   }
   React.useEffect(function () { load() }, [])
 
@@ -245,6 +239,7 @@ function ToolsSection() {
       return el('div', { key: cat.name },
         el('div', { className: 'dsh-h2', style: { margin: '14px 0 6px' } }, cat.name),
         cat.items.map(function (tool) {
+          var isBusy = busy === tool.id
           return el('div', { className: 'dsh-card', key: tool.id, style: { padding: '12px', marginBottom: '8px' } },
             el('div', { className: 'dsh-row' },
               el('div', { style: { flex: 1 } },
@@ -253,8 +248,12 @@ function ToolsSection() {
                 el('div', { className: 'dsh-muted', style: { fontSize: '11px' } }, tool.note),
                 el('div', { className: 'dsh-muted', style: { fontSize: '11px' } }, tool.pkg)),
               tool.installed
-                ? el('span', { className: 'dsh-ok' }, '已安装')
-                : el('button', { className: 'dsh-btn', onClick: function () { install(tool) }, disabled: installingPkg === tool.pkg }, installingPkg === tool.pkg ? '安装中…' : '安装')))
+                ? el('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-end' } },
+                    el('span', { className: tool.enabled ? 'dsh-ok' : 'dsh-muted' }, tool.enabled ? '启用中' : '已禁用'),
+                    el('div', { style: { display: 'flex', gap: '6px' } },
+                      el('button', { className: 'dsh-btn ghost', onClick: function () { act('set-tool-enabled', { id: tool.id, enabled: !tool.enabled }) }, disabled: isBusy }, tool.enabled ? '禁用' : '启用'),
+                      el('button', { className: 'dsh-btn ghost', onClick: function () { act('uninstall-tool', { id: tool.id }) }, disabled: isBusy }, '卸载')))
+                : el('button', { className: 'dsh-btn', onClick: function () { act('install-tool', { id: tool.id }) }, disabled: isBusy }, isBusy ? '安装中…' : '安装')))
         })
       )
     })
@@ -265,16 +264,16 @@ function ToolsSection() {
       el('h2', { className: 'dsh-h2' }, 'Tool 市场'),
       el('button', { className: 'dsh-btn ghost', onClick: load }, '刷新')),
     body,
-    el('div', { className: 'dsh-muted' }, '点击「安装」即可一键安装，来源标注见每条工具。'))
+    el('div', { className: 'dsh-muted' }, '「安装」只是下载到本机；用「启用 / 禁用」控制是否生效，「卸载」彻底移除。部分工具还需在其内部配置（如 API Key）才会真正工作。'))
 }
 
 function PluginsSection() {
   var p = React.useState({ status: 'idle', cats: null, error: null })
   var state = p[0]
   var setState = p[1]
-  var ip = React.useState(null)
-  var installingPkg = ip[0]
-  var setInstallingPkg = ip[1]
+  var b = React.useState(null)
+  var busy = b[0]
+  var setBusy = b[1]
   function load() {
     setState({ status: 'loading', cats: null, error: null })
     host.call('list-plugins').then(function (res) {
@@ -284,15 +283,9 @@ function PluginsSection() {
       setState({ status: 'error', cats: null, error: String((e && e.message) || e) })
     })
   }
-  function install(plug) {
-    setInstallingPkg(plug.pkg)
-    host.call('install-plugin', { pkg: plug.pkg }).then(function () {
-      setInstallingPkg(null)
-      load()
-    }).catch(function () {
-      setInstallingPkg(null)
-      load()
-    })
+  function act(key, args) {
+    setBusy(args.id)
+    host.call(key, args).then(function () { setBusy(null); load() }).catch(function () { setBusy(null); load() })
   }
   React.useEffect(function () { load() }, [])
 
@@ -304,6 +297,7 @@ function PluginsSection() {
       return el('div', { key: cat.name },
         el('div', { className: 'dsh-h2', style: { margin: '14px 0 6px' } }, cat.name),
         cat.items.map(function (plug) {
+          var isBusy = busy === plug.id
           return el('div', { className: 'dsh-card', key: plug.id, style: { padding: '12px', marginBottom: '8px' } },
             el('div', { className: 'dsh-row' },
               el('div', { style: { flex: 1 } },
@@ -312,8 +306,12 @@ function PluginsSection() {
                 el('div', { className: 'dsh-muted', style: { fontSize: '11px' } }, plug.note),
                 el('div', { className: 'dsh-muted', style: { fontSize: '11px' } }, plug.pkg)),
               plug.installed
-                ? el('span', { className: 'dsh-ok' }, '已安装')
-                : el('button', { className: 'dsh-btn', onClick: function () { install(plug) }, disabled: installingPkg === plug.pkg }, installingPkg === plug.pkg ? '安装中…' : '安装')))
+                ? el('div', { style: { display: 'flex', flexDirection: 'column', gap: '6px', alignItems: 'flex-end' } },
+                    el('span', { className: plug.enabled ? 'dsh-ok' : 'dsh-muted' }, plug.enabled ? '启用中' : '已禁用'),
+                    el('div', { style: { display: 'flex', gap: '6px' } },
+                      el('button', { className: 'dsh-btn ghost', onClick: function () { act('set-plugin-enabled', { id: plug.id, enabled: !plug.enabled }) }, disabled: isBusy }, plug.enabled ? '禁用' : '启用'),
+                      el('button', { className: 'dsh-btn ghost', onClick: function () { act('uninstall-plugin', { id: plug.id }) }, disabled: isBusy }, '卸载')))
+                : el('button', { className: 'dsh-btn', onClick: function () { act('install-plugin', { id: plug.id }) }, disabled: isBusy }, isBusy ? '安装中…' : '安装')))
         })
       )
     })
@@ -324,7 +322,7 @@ function PluginsSection() {
       el('h2', { className: 'dsh-h2' }, 'Plugin 市场'),
       el('button', { className: 'dsh-btn ghost', onClick: load }, '刷新')),
     body,
-    el('div', { className: 'dsh-muted' }, '插件 = 扩展 harness 本身的能力（区别于工具）；均为官方可信来源。'))
+    el('div', { className: 'dsh-muted' }, '「安装」只是下载到本机；用「启用 / 禁用」控制是否生效，「卸载」彻底移除。插件 = 扩展 harness 本身能力，均为官方可信来源。'))
 }
 
 function GuideSection() {
