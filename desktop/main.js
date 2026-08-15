@@ -28,7 +28,7 @@ let autoPinned = false
 // 强制界面语言为中文（Electron/Chromium 默认 locale 是 en-US，否则界面会显示英文）
 app.commandLine.appendSwitch('lang', 'zh-CN')
 app.setAppUserModelId('com.dsh.client')
-app.setName('DeepSeekHarness')
+app.setName('DeepSeekClient')
 // 开机自启（默认开启，托盘菜单可关）
 app.setLoginItemSettings({ openAtLogin: true })
 
@@ -88,6 +88,17 @@ function ensureFeatures(cb) {
       const s = path.join(bootSrc, files[i])
       if (fs.existsSync(s)) fs.copyFileSync(s, path.join(bootDst, files[i]))
     }
+    // 静态客户端插件（宿主 RPC + 客户端 UI，免每次会话重载）：部署到 profile 的 node_modules
+    const staticSrc = path.join(APP_DIR, 'plugin-static')
+    const staticDst = path.join(profileDir, 'node_modules', 'dsh-client-static')
+    if (fs.existsSync(staticSrc)) {
+      fs.mkdirSync(path.join(staticDst, 'lib'), { recursive: true })
+      const sFiles = ['package.json', 'lib/index.js', 'lib/client.js', 'lib/typert.host.js']
+      for (let i = 0; i < sFiles.length; i++) {
+        const s = path.join(staticSrc, sFiles[i])
+        if (fs.existsSync(s)) fs.copyFileSync(s, path.join(staticDst, sFiles[i]))
+      }
+    }
     // 把「神奇小开关」preset 装进用户 agent-presets 根（纯配置文件，非插件）
     const presetsSrc = path.join(APP_DIR, 'presets')
     const presetsDst = path.join(home, '.dsh', '.agent-presets')
@@ -110,7 +121,7 @@ function ensureFeatures(cb) {
       fs.mkdirSync(profileDir, { recursive: true })
       fs.writeFileSync(pkgPath, JSON.stringify({ name: 'dsh-profile-web', private: true, dependencies: {}, dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'] } } }, null, 2))
     }
-    fs.writeFileSync(path.join(profileDir, 'cordis.patch.yml'), '- insert:\n    - id: dsh-client-boot\n      name: dsh-client-boot\n')
+    fs.writeFileSync(path.join(profileDir, 'cordis.patch.yml'), '- insert:\n    - id: dsh-client-static\n      name: dsh-client-static\n')
     // 内核补丁（每次启动自动补回，防止 DSH 更新覆盖）：
     // 1) runHostHalf 批准后清 requiresApproval —— 客户端半边免点同意自动加载
     // 2) 成功时不再注入 "Cordis run ... completed successfully" 噪声 —— 避免它变成会话标题
@@ -151,7 +162,7 @@ function createWindow() {
   win = new BrowserWindow({
     width: 1200,
     height: 820,
-    title: 'DeepSeekHarness',
+    title: 'DeepSeekClient',
     icon: ICON,
     backgroundColor: '#ffffff',
     webPreferences: {
@@ -183,7 +194,7 @@ function refreshTrayMenu() {
 function createTray() {
   const img = nativeImage.createFromPath(ICON)
   tray = new Tray(img.resize({ width: 16, height: 16 }))
-  tray.setToolTip('DeepSeekHarness')
+  tray.setToolTip('DeepSeekClient')
   refreshTrayMenu()
   tray.on('click', function () { toggleWin() })
 }

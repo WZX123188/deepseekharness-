@@ -1,0 +1,28 @@
+{
+  "name": "dsh-client-static",
+  "version": "1.0.0",
+  "description": "DSH 客户端功能静态插件（宿主 RPC + 客户端 UI，免编译器手写 typert）",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./typert": "./lib/typert.host.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "license": "MIT",
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-web-react",
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-api-remotes",
+        "@deepseek-ai/dsh-client-ui-primitives"
+      ]
+    }
+  }
+}

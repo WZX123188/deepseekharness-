@@ -1,6 +1,6 @@
 {
   "name": "dsh-client-desktop",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "DSH 客户端桌面版（Electron）：内部拉起 dsh web，弹窗置顶提醒",
   "main": "main.js",
   "scripts": {
@@ -15,7 +15,7 @@
   },
   "build": {
     "appId": "com.dsh.client",
-    "productName": "DeepSeekHarness",
+    "productName": "DeepSeekClient",
     "directories": {
       "output": "release"
     },
@@ -38,6 +38,10 @@
         "to": "presets"
       },
       {
+        "from": "plugin-static",
+        "to": "plugin-static"
+      },
+      {
         "from": "icon.ico",
         "to": "icon.ico"
       },
@@ -57,7 +61,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "DeepSeekHarness",
+      "shortcutName": "DeepSeekClient",
       "license": "说明.txt",
       "installerIcon": "icon.ico",
       "uninstallerIcon": "icon.ico",
@@ -65,7 +69,7 @@
       "runAfterFinish": true,
       "deleteAppDataOnUninstall": false,
       "include": "installer.nsh",
-      "artifactName": "DeepSeek-Harness-Setup-${version}.exe"
+      "artifactName": "DeepSeek-Client-Setup-${version}.exe"
     }
   }
 }
