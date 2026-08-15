@@ -1,0 +1,8 @@
+{
+  "name": "dsh-client-boot",
+  "version": "1.0.0",
+  "description": "DSH 客户端启动引导：每个会话自动加载全部功能",
+  "type": "module",
+  "main": "index.js",
+  "license": "MIT"
+}

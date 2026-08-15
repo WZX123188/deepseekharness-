@@ -1,0 +1,350 @@
+// 客户端 UI：余额/用量页 + 检查更新页 + DeepSeek 风格
+function el(tag, props) {
+  var children = Array.prototype.slice.call(arguments, 2)
+  return React.createElement.apply(null, [tag, props].concat(children))
+}
+
+var BLUE = '#4d6bfe'
+var CSS = [
+  '.dsh-page{padding:20px;display:flex;flex-direction:column;gap:16px}',
+  '.dsh-head{display:flex;justify-content:space-between;align-items:center}',
+  '.dsh-h2{margin:0;font-size:15px;font-weight:600}',
+  '.dsh-card{background:rgba(127,127,127,.06);border:1px solid rgba(127,127,127,.16);border-radius:12px;padding:16px}',
+  '.dsh-row{display:flex;justify-content:space-between;align-items:center;padding:8px 0}',
+  '.dsh-row+.dsh-row{border-top:1px solid rgba(127,127,127,.10)}',
+  '.dsh-label{opacity:.62;font-size:13px}',
+  '.dsh-value{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}',
+  '.dsh-amount{font-size:24px;font-weight:700;color:' + BLUE + '}',
+  '.dsh-btn{background:' + BLUE + ';color:#fff;border:none;border-radius:8px;padding:8px 16px;font-size:14px;cursor:pointer}',
+  '.dsh-btn:disabled{opacity:.5;cursor:default}',
+  '.dsh-btn.ghost{background:transparent;color:' + BLUE + ';border:1px solid ' + BLUE + '}',
+  '.dsh-err{color:#e5484d;font-size:13px}',
+  '.dsh-ok{color:#30a46c;font-size:13px}',
+  '.dsh-muted{opacity:.6;font-size:13px;line-height:1.5}',
+].join('\n')
+
+function BalanceSection() {
+  var p = React.useState({ status: 'idle' })
+  var state = p[0]
+  var setState = p[1]
+  function load() {
+    setState({ status: 'loading' })
+    host.call('deepseek-balance').then(function (res) {
+      if (res && res.ok) {
+        var balance = null
+        try { balance = JSON.parse(res.body) } catch (e) { balance = null }
+        setState({ status: 'ok', balance: balance })
+      } else {
+        setState({ status: 'error', error: (res && res.error) || '未知错误' })
+      }
+    }).catch(function (e) {
+      setState({ status: 'error', error: String((e && e.message) || e) })
+    })
+  }
+  React.useEffect(function () { load() }, [])
+
+  var body
+  if (state.status === 'loading') {
+    body = el('div', { className: 'dsh-muted' }, '正在查询余额…')
+  } else if (state.status === 'error') {
+    body = el('div', { className: 'dsh-err' }, state.error)
+  } else if (state.status === 'ok' && state.balance) {
+    var infos = (state.balance.balance_infos) || []
+    if (infos.length === 0) {
+      body = el('div', { className: 'dsh-muted' }, '未返回余额信息')
+    } else {
+      body = infos.map(function (info) {
+        return el('div', { className: 'dsh-card', key: info.currency },
+          el('div', { className: 'dsh-row' }, el('span', { className: 'dsh-label' }, '币种'), el('span', { className: 'dsh-value' }, info.currency)),
+          el('div', { className: 'dsh-row' }, el('span', { className: 'dsh-label' }, '总余额'), el('span', { className: 'dsh-amount' }, info.total_balance)),
+          el('div', { className: 'dsh-row' }, el('span', { className: 'dsh-label' }, '赠送余额'), el('span', { className: 'dsh-value' }, info.granted_balance)),
+          el('div', { className: 'dsh-row' }, el('span', { className: 'dsh-label' }, '充值余额'), el('span', { className: 'dsh-value' }, info.topped_up_balance))
+        )
+      })
+    }
+  }
+
+  return el('div', { className: 'dsh-page' },
+    el('div', { className: 'dsh-head' },
+      el('h2', { className: 'dsh-h2' }, 'DeepSeek 余额'),
+      el('button', { className: 'dsh-btn ghost', onClick: load }, '刷新')
+    ),
+    body,
+    el('div', { className: 'dsh-muted' }, '余额来自 DeepSeek 开放平台 user/balance 接口。token 用量无官方 API，本地用量统计将在后续版本提供。')
+  )
+}
+
+function UpdateSection() {
+  var p = React.useState({ status: 'idle', res: null, updated: false })
+  var state = p[0]
+  var setState = p[1]
+  var up = React.useState(false)
+  var updating = up[0]
+  var setUpdating = up[1]
+  function check() {
+    setState({ status: 'loading', res: null, updated: false })
+    host.call('check-update').then(function (res) {
+      if (res && res.ok) setState({ status: 'ok', res: res, updated: false })
+      else setState({ status: 'error', res: null, updated: false, error: (res && res.error) || '未知错误' })
+    }).catch(function (e) {
+      setState({ status: 'error', res: null, updated: false, error: String((e && e.message) || e) })
+    })
+  }
+  function doUpdate() {
+    setUpdating(true)
+    host.call('do-update').then(function (res) {
+      setUpdating(false)
+      if (res && res.ok) setState({ status: 'ok', res: state.res, updated: true })
+      else setState({ status: 'error', res: state.res, updated: false, error: (res && res.error) || '更新失败' })
+    }).catch(function (e) {
+      setUpdating(false)
+      setState({ status: 'error', res: state.res, updated: false, error: String((e && e.message) || e) })
+    })
+  }
+  React.useEffect(function () { check() }, [])
+
+  var inner = null
+  if (state.status === 'loading') inner = el('div', { className: 'dsh-muted' }, '正在检查更新…')
+  else if (state.status === 'error') inner = el('div', { className: 'dsh-err' }, state.error)
+  else if (state.status === 'ok' && state.res) {
+    inner = el('div', {},
+      el('div', { className: 'dsh-row' }, el('span', { className: 'dsh-label' }, '当前版本'), el('span', { className: 'dsh-value' }, state.res.current)),
+      el('div', { className: 'dsh-row' }, el('span', { className: 'dsh-label' }, '最新版本'), el('span', { className: 'dsh-value' }, state.res.latest)),
+      el('div', { style: { paddingTop: '12px' } },
+        state.res.hasUpdate
+          ? el('button', { className: 'dsh-btn', onClick: doUpdate, disabled: updating }, updating ? '更新中…' : '一键更新')
+          : el('div', { className: 'dsh-ok' }, '已是最新版本')
+      ),
+      state.updated ? el('div', { className: 'dsh-ok', style: { paddingTop: '8px' } }, '更新完成，请重启 dsh web 生效。') : null
+    )
+  }
+
+  return el('div', { className: 'dsh-page' },
+    el('div', { className: 'dsh-head' },
+      el('h2', { className: 'dsh-h2' }, '检查更新'),
+      el('button', { className: 'dsh-btn ghost', onClick: check }, '重新检查')
+    ),
+    el('div', { className: 'dsh-card' }, inner)
+  )
+}
+
+function ToolsSection() {
+  var p = React.useState({ status: 'idle', cats: null, error: null })
+  var state = p[0]
+  var setState = p[1]
+  var ip = React.useState(null)
+  var installingPkg = ip[0]
+  var setInstallingPkg = ip[1]
+  function load() {
+    setState({ status: 'loading', cats: null, error: null })
+    host.call('list-tools').then(function (res) {
+      if (res && res.ok) setState({ status: 'ok', cats: res.categories, error: null })
+      else setState({ status: 'error', cats: null, error: (res && res.error) || '未知错误' })
+    }).catch(function (e) {
+      setState({ status: 'error', cats: null, error: String((e && e.message) || e) })
+    })
+  }
+  function install(tool) {
+    setInstallingPkg(tool.pkg)
+    host.call('install-tool', { pkg: tool.pkg }).then(function () {
+      setInstallingPkg(null)
+      load()
+    }).catch(function () {
+      setInstallingPkg(null)
+      load()
+    })
+  }
+  React.useEffect(function () { load() }, [])
+
+  var body
+  if (state.status === 'loading') body = el('div', { className: 'dsh-muted' }, '正在加载工具列表…')
+  else if (state.status === 'error') body = el('div', { className: 'dsh-err' }, state.error)
+  else if (state.status === 'ok' && state.cats) {
+    body = state.cats.map(function (cat) {
+      return el('div', { key: cat.name },
+        el('div', { className: 'dsh-h2', style: { margin: '14px 0 6px' } }, cat.name),
+        cat.items.map(function (tool) {
+          return el('div', { className: 'dsh-card', key: tool.id, style: { padding: '12px', marginBottom: '8px' } },
+            el('div', { className: 'dsh-row' },
+              el('div', { style: { flex: 1 } },
+                el('div', { className: 'dsh-value' }, tool.name),
+                el('div', { className: 'dsh-muted' }, tool.desc),
+                el('div', { className: 'dsh-muted', style: { fontSize: '11px' } }, tool.pkg)),
+              tool.installed
+                ? el('span', { className: 'dsh-ok' }, '已安装')
+                : el('button', { className: 'dsh-btn', onClick: function () { install(tool) }, disabled: installingPkg === tool.pkg }, installingPkg === tool.pkg ? '安装中…' : '安装')))
+        })
+      )
+    })
+  }
+
+  return el('div', { className: 'dsh-page' },
+    el('div', { className: 'dsh-head' },
+      el('h2', { className: 'dsh-h2' }, '工具市场'),
+      el('button', { className: 'dsh-btn ghost', onClick: load }, '刷新')),
+    body,
+    el('div', { className: 'dsh-muted' }, '点击「安装」即可一键安装工具；后续版本将支持直接接入 MCP 客户端。'))
+}
+
+function ApiSection() {
+  var p = React.useState({ status: 'idle', info: null, error: null, msg: null })
+  var state = p[0]
+  var setState = p[1]
+  var kp = React.useState('')
+  var keyInput = kp[0]
+  var setKeyInput = kp[1]
+  var tp = React.useState(false)
+  var testing = tp[0]
+  var setTesting = tp[1]
+  function load() {
+    setState({ status: 'loading', info: null, error: null, msg: null })
+    host.call('get-api-status').then(function (res) {
+      if (res && res.ok) setState({ status: 'ok', info: res, error: null, msg: null })
+      else setState({ status: 'error', info: null, error: (res && res.error) || '未知错误', msg: null })
+    }).catch(function (e) { setState({ status: 'error', info: null, error: String((e && e.message) || e), msg: null }) })
+  }
+  function save() {
+    host.call('set-api-key', { value: keyInput }).then(function (res) {
+      setKeyInput('')
+      if (res && res.ok) { setState({ status: 'ok', info: state.info, error: null, msg: '已保存' }); load() }
+      else setState({ status: 'error', info: state.info, error: (res && res.error) || '保存失败', msg: null })
+    }).catch(function (e) { setState({ status: 'error', info: state.info, error: String((e && e.message) || e), msg: null }) })
+  }
+  function test() {
+    setTesting(true)
+    host.call('test-api').then(function (res) {
+      setTesting(false)
+      if (res && res.ok) setState({ status: 'ok', info: state.info, error: null, msg: '连接成功 ✓' })
+      else setState({ status: 'error', info: state.info, error: (res && res.error) || '连接失败', msg: null })
+    }).catch(function (e) { setTesting(false); setState({ status: 'error', info: state.info, error: String((e && e.message) || e), msg: null }) })
+  }
+  function clearKey() {
+    host.call('clear-api-key').then(function () { load() }).catch(function () {})
+  }
+  React.useEffect(function () { load() }, [])
+
+  var configured = state.status === 'ok' && state.info && state.info.configured
+  return el('div', { className: 'dsh-page' },
+    el('div', { className: 'dsh-head' }, el('h2', { className: 'dsh-h2' }, 'API 管理')),
+    el('div', { className: 'dsh-card' },
+      el('div', { className: 'dsh-row' },
+        el('span', { className: 'dsh-label' }, 'DeepSeek API Key'),
+        configured ? el('span', { className: 'dsh-ok' }, '已配置' + (state.info.source ? '（' + state.info.source + '）' : '')) : el('span', { className: 'dsh-err' }, '未配置')),
+      el('div', { style: { display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' } },
+        el('input', { type: 'password', placeholder: 'sk-...', value: keyInput, onChange: function (e) { setKeyInput(e.target.value) }, style: { flex: 1, minWidth: '200px', padding: '8px', borderRadius: '8px', border: '1px solid rgba(127,127,127,.3)', background: 'transparent', color: 'inherit' } }),
+        el('button', { className: 'dsh-btn', onClick: save, disabled: keyInput.trim() === '' }, '保存'),
+        el('button', { className: 'dsh-btn ghost', onClick: test, disabled: testing }, testing ? '测试中…' : '测试连接'),
+        configured ? el('button', { className: 'dsh-btn ghost', onClick: clearKey }, '清除') : null),
+      state.msg ? el('div', { className: 'dsh-ok', style: { marginTop: '8px' } }, state.msg) : null,
+      state.error ? el('div', { className: 'dsh-err', style: { marginTop: '8px' } }, state.error) : null),
+    el('div', { className: 'dsh-muted' }, 'Key 保存在本地凭据，不会上传。到 platform.deepseek.com → API Keys 创建后粘贴到这里。'))
+}
+
+function GuideSection() {
+  return el('div', { className: 'dsh-page' },
+    el('h2', { className: 'dsh-h2' }, '使用指南'),
+    el('div', { className: 'dsh-card' },
+      el('div', { className: 'dsh-h2', style: { marginBottom: '8px' } }, '第一步：接入 API'),
+      el('div', { className: 'dsh-muted' }, '在「API 管理」页填入 DeepSeek API Key（platform.deepseek.com → API Keys 创建），点「保存」再「测试连接」。')),
+    el('div', { className: 'dsh-card' },
+      el('div', { className: 'dsh-h2', style: { marginBottom: '8px' } }, '第二步：功能介绍'),
+      el('div', { className: 'dsh-muted' }, '· 权限门：修改 / 删除文件时勾选「同意」并确认后放行；读取默认放行。'),
+      el('div', { className: 'dsh-muted' }, '· 余额 / 用量：查看 DeepSeek 账户余额。'),
+      el('div', { className: 'dsh-muted' }, '· 检查更新：一键更新到最新版。'),
+      el('div', { className: 'dsh-muted' }, '· 工具市场：一键安装热门工具。')),
+    el('div', { className: 'dsh-card' },
+      el('div', { className: 'dsh-h2', style: { marginBottom: '8px' } }, '快捷操作'),
+      el('div', { className: 'dsh-muted' }, '· Ctrl+Alt+D：呼出 / 隐藏窗口。'),
+      el('div', { className: 'dsh-muted' }, '· 右下角托盘：显示 / 退出、窗口置顶、开机自启开关。')))
+}
+
+function ProjectsSection() {
+  var p = React.useState({ status: 'idle', items: null, error: null })
+  var state = p[0]
+  var setState = p[1]
+  function load() {
+    setState({ status: 'loading', items: null, error: null })
+    host.call('list-projects').then(function (res) {
+      if (res && res.ok) setState({ status: 'ok', items: res.items, error: null })
+      else setState({ status: 'error', items: null, error: (res && res.error) || '未知错误' })
+    }).catch(function (e) { setState({ status: 'error', items: null, error: String((e && e.message) || e) }) })
+  }
+  function create() {
+    var workspaces = ctx.get('workspaces')
+    if (workspaces === undefined || typeof workspaces.pickDirectory !== 'function') {
+      setState({ status: 'error', items: state.items, error: '缺少目录选择服务' })
+      return
+    }
+    workspaces.pickDirectory().then(function (dir) {
+      if (dir === null || dir === undefined || dir === '') return
+      host.call('create-project', { path: dir }).then(function (res) {
+        if (res && res.ok) load()
+        else setState({ status: 'error', items: state.items, error: (res && res.error) || '创建失败' })
+      }).catch(function (e) { setState({ status: 'error', items: state.items, error: String((e && e.message) || e) }) })
+    }).catch(function (e) { setState({ status: 'error', items: state.items, error: String((e && e.message) || e) }) })
+  }
+  React.useEffect(function () { load() }, [])
+
+  var body
+  if (state.status === 'loading') body = el('div', { className: 'dsh-muted' }, '正在加载项目…')
+  else if (state.status === 'error') body = el('div', { className: 'dsh-err' }, state.error)
+  else if (state.status === 'ok' && state.items) {
+    if (state.items.length === 0) body = el('div', { className: 'dsh-muted' }, '还没有项目，点「新建项目」选一个文件夹开始。')
+    else body = state.items.map(function (item) {
+      return el('div', { className: 'dsh-card', key: item.id, style: { padding: '12px', marginBottom: '8px' } },
+        el('div', { className: 'dsh-value' }, item.title),
+        el('div', { className: 'dsh-muted', style: { fontSize: '11px' } }, item.path))
+    })
+  }
+
+  return el('div', { className: 'dsh-page' },
+    el('div', { className: 'dsh-head' },
+      el('h2', { className: 'dsh-h2' }, '项目'),
+      el('button', { className: 'dsh-btn', onClick: create }, '新建项目')),
+    body,
+    el('div', { className: 'dsh-muted' }, '项目即工作区：一个文件夹对应一个项目，会话与文件按项目隔离。'))
+}
+
+return {
+  apply(ctx) {
+    var slots = ctx.get('slots')
+    if (slots === undefined) return
+    styles.insert(CSS)
+    slots.inject('settings.section', function () {
+      return slots.register(
+        { name: 'settings.section', id: 'dsh-balance', order: 30, label: '余额 / 用量' },
+        function () { return React.createElement(BalanceSection) }
+      )
+    })
+    slots.inject('settings.section', function () {
+      return slots.register(
+        { name: 'settings.section', id: 'dsh-update', order: 40, label: '检查更新' },
+        function () { return React.createElement(UpdateSection) }
+      )
+    })
+    slots.inject('settings.section', function () {
+      return slots.register(
+        { name: 'settings.section', id: 'dsh-projects', order: 2, label: '项目' },
+        function () { return React.createElement(ProjectsSection) }
+      )
+    })
+    slots.inject('settings.section', function () {
+      return slots.register(
+        { name: 'settings.section', id: 'dsh-api', order: 5, label: 'API 管理' },
+        function () { return React.createElement(ApiSection) }
+      )
+    })
+    slots.inject('settings.section', function () {
+      return slots.register(
+        { name: 'settings.section', id: 'dsh-tools', order: 35, label: '工具市场' },
+        function () { return React.createElement(ToolsSection) }
+      )
+    })
+    slots.inject('settings.section', function () {
+      return slots.register(
+        { name: 'settings.section', id: 'dsh-guide', order: 45, label: '使用指南' },
+        function () { return React.createElement(GuideSection) }
+      )
+    })
+  },
+}
