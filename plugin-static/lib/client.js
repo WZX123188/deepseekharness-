@@ -889,11 +889,12 @@ window.__ModuleLoader__.load({
       })
 
       // 全局拖拽：把 PDF / Word / Excel / PPT 拖到窗口任意位置（包括聊天框）→ 打开实时翻译面板。
-      // 图片等其它文件交给系统原有处理；原生文件输入框里的拖放也交给它自己。
+      // 图片等其它文件交给系统/输入框原有处理（原生聊天输入框支持图片附件暂存随消息发送），
+      // 只在 drop 时阻止浏览器默认“打开文件”；原生文件输入框里的拖放也交给它自己。
       var docModal = null
       if (typeof document !== "undefined") {
         document.addEventListener("dragover", function (e) {
-          if (e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.indexOf("Files") !== -1) { e.preventDefault(); e.stopPropagation() }
+          if (e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.indexOf("Files") !== -1) { e.preventDefault() }
         })
         document.addEventListener("drop", function (e) {
           var files = e.dataTransfer && e.dataTransfer.files
@@ -902,7 +903,7 @@ window.__ModuleLoader__.load({
           var ext = (f.name || "").toLowerCase().match(/\.(pdf|docx|xlsx|pptx)$/)
           var onFileInput = e.target && e.target.tagName === "INPUT" && e.target.type === "file"
           if (onFileInput) return
-          if (!ext) return
+          if (!ext) { e.preventDefault(); return }
           e.preventDefault(); e.stopPropagation()
           if (!docModal) docModal = showDocTranslateModal()
           var rd = new FileReader()
