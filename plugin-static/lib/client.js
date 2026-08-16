@@ -21,7 +21,8 @@ window.__ModuleLoader__.load({
       direct("listPlugins"), direct("installPlugin", [argsParam()]), direct("setPluginEnabled", [argsParam()]), direct("uninstallPlugin", [argsParam()]),
       direct("listProjects"), direct("createProject", [argsParam()]), direct("openFeedback", [argsParam()]),
       direct("getVisionStatus"), direct("setVisionKey", [argsParam()]), direct("clearVisionKey"), direct("testVision"), direct("seeImage", [argsParam()]), direct("openVisionSite"),
-      direct("translateText", [argsParam()]), direct("translatePdf", [argsParam()])
+      direct("translateText", [argsParam()]), direct("translatePdf", [argsParam()]),
+      direct("translateOffice", [argsParam()]), direct("saveOffice", [argsParam()])
     ]
 
     var BLUE = "#4d6bfe"
@@ -297,6 +298,79 @@ window.__ModuleLoader__.load({
         }) : null)
     }
 
+    function downloadBase64(b64, filename) {
+      try {
+        var bin = atob(b64)
+        var arr = new Uint8Array(bin.length)
+        for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i)
+        var blob = new Blob([arr], { type: "application/octet-stream" })
+        var url = URL.createObjectURL(blob)
+        var a = document.createElement("a")
+        a.href = url; a.download = filename
+        document.body.appendChild(a); a.click(); document.body.removeChild(a)
+        setTimeout(function () { URL.revokeObjectURL(url) }, 3000)
+      } catch (e) {}
+    }
+
+    function OfficeSection() {
+      var s = React.useState(""); var status = s[0]; var setStatus = s[1]
+      var ch = React.useState(null); var chunks = ch[0]; var setChunks = ch[1]
+      var fb = React.useState(""); var fileB64 = fb[0]; var setFileB64 = fb[1]
+      var fn = React.useState(""); var fileName = fn[0]; var setFileName = fn[1]
+      var rb = React.useState(""); var resultB64 = rb[0]; var setResultB64 = rb[1]
+      var rn = React.useState(""); var resultName = rn[0]; var setResultName = rn[1]
+      var b = React.useState(false); var busy = b[0]; var setBusy = b[1]
+      var m = React.useState(""); var msg = m[0]; var setMsg = m[1]
+
+      function onFile(e) {
+        var f = e.target.files && e.target.files[0]
+        if (!f) return
+        var ext = (f.name.toLowerCase().match(/\.(docx|xlsx|pptx)$/) || [])[1]
+        if (!ext) { setMsg("只支持 .docx / .xlsx / .pptx（WPS 请另存为这些格式）"); return }
+        setFileName(f.name); setChunks(null); setResultB64(""); setMsg("")
+        var rd = new FileReader()
+        rd.onload = function () {
+          setFileB64(rd.result); setBusy(true); setStatus("translating"); setMsg("正在翻译全文，请稍候…")
+          callHost("translateOffice", { file: rd.result, filename: f.name }).then(function (res) {
+            setBusy(false)
+            if (res && res.ok) { setChunks(res.chunks); setResultB64(res.resultBase64); setResultName(res.outFilename); setStatus("done"); setMsg("翻译完成 ✓ 共 " + res.chunks.length + " 段，可逐段修改后再保存。") }
+            else { setStatus("error"); setMsg((res && res.error) || "翻译失败") }
+          }).catch(function (err) { setBusy(false); setStatus("error"); setMsg(String((err && err.message) || err)) })
+        }
+        rd.readAsDataURL(f)
+      }
+      function edit(idx, val) {
+        var next = chunks.slice()
+        next[idx] = { key: next[idx].key, original: next[idx].original, translated: val }
+        setChunks(next)
+      }
+      function save() {
+        if (!resultB64 && !chunks) return
+        if (resultB64 && !chunks.some(function (c) { return c._edited })) { downloadBase64(resultB64, resultName); return }
+        // 用户改过 → 重新回填
+        setBusy(true); setMsg("正在生成译文文件…")
+        callHost("saveOffice", { file: fileB64, filename: fileName, chunks: chunks }).then(function (res) {
+          setBusy(false)
+          if (res && res.ok) { downloadBase64(res.resultBase64, res.outFilename); setMsg("已生成并下载 " + res.outFilename) }
+          else setMsg((res && res.error) || "保存失败")
+        }).catch(function (err) { setBusy(false); setMsg(String((err && err.message) || err)) })
+      }
+
+      return el("div", { className: "dsh-page" },
+        el("div", { className: "dsh-head" }, el("h2", { className: "dsh-h2" }, "Office 翻译")),
+        el("div", { className: "dsh-card" },
+          el("div", { className: "dsh-muted", style: { marginBottom: "10px" } }, "上传 Word（.docx）/ Excel（.xlsx）/ PPT（.pptx）文档，全文翻译成中文；可逐段修改译文，确认后下载译文文件。WPS 请先另存为 .docx/.xlsx/.pptx。"),
+          el("input", { type: "file", accept: ".docx,.xlsx,.pptx", onChange: onFile, disabled: busy, className: "dsh-input" }),
+          busy ? el("div", { className: "dsh-muted", style: { marginTop: "10px" } }, "翻译中，请耐心等待…") : null,
+          msg ? el("div", { className: msg.indexOf("完成") !== -1 || msg.indexOf("已生成") !== -1 ? "dsh-ok" : "dsh-err", style: { marginTop: "10px" } }, msg) : null,
+          chunks ? el("div", { style: { marginTop: "12px" } }, el("button", { className: "dsh-btn", onClick: save, disabled: busy }, "💾 保存译文文件")) : null),
+        chunks && chunks.length ? chunks.map(function (c, idx) {
+          return el("div", { className: "dsh-card", key: idx, style: { marginTop: "10px" } },
+            el("div", { className: "dsh-muted", style: { marginBottom: "6px", whiteSpace: "pre-wrap", fontSize: "12px" } }, "原文：" + c.original),
+            el("textarea", { value: c.translated, onChange: function (e) { edit(idx, e.target.value) }, rows: 3, className: "dsh-input", onFocus: function (e) { e.target.select() } }))
+        }) : null)
+    }
+
     function ProjectsSection() {
       var p = React.useState({ status: "idle", items: null, error: null })
       var state = p[0]; var setState = p[1]
@@ -552,6 +626,7 @@ window.__ModuleLoader__.load({
       section("dsh-permission", 6, "权限", PermissionSection)
       section("dsh-vision", 25, "视图模式", VisionSection)
       section("dsh-pdf", 26, "PDF 翻译", PdfSection)
+      section("dsh-office", 27, "Office 翻译", OfficeSection)
 
       // 视图模式开关：放到首页对话框（输入框工具行左侧）
       ctx.slots.inject("conversation.input.left", function () {
