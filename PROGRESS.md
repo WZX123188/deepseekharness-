@@ -199,6 +199,20 @@ installer.nsh 快捷方式勾选页，说明.txt（UTF-8 BOM + 免责声明）�
 
 ---
 
+## v2.2.0~v2.2.2 与 v3.0.0（2026-08-16，自主连做）
+
+- **v2.2.0 PDF 实时翻译**：`pdfjs-dist`(文字版抽取) + DeepSeek 翻译 + `@napi-rs/canvas`(扫描版渲染) + GLM-4V-Flash OCR；技术文档术语/引脚名保真。依赖装在 `dsh-runtime/node_modules/pdf-tools/`（pdfjs-dist + @napi-rs/canvas + jszip）。
+- **v2.2.1 Office 全家桶翻译**：`.docx/.xlsx/.pptx`（含 WPS 另存的这些格式）拖拽 → jszip+正则抽文本 → DeepSeek 翻译 → 预览逐段修改 → 回填生成译文文件（`plugin-static/lib/office.mjs` 辅助脚本）。旧版二进制 `.wps/.et/.dps` 不支持，需另存为 .docx/.xlsx/.pptx。
+- **v2.2.2 整页壁纸**：预设色/渐变 + 上传图片铺满背景，存本机数据目录，启动自动应用。
+- **v3.0.0 激进精简**：删其它厂商 LLM SDK（openai/mistralai/anthropic/google/aws-sdk/smithy ≈18.7MB）；@opentelemetry 是遥测插件必需（删了会崩，已保留并重精简）；@img(sharp) 图片附件必需、@shikijs 代码高亮必需，保留。自测通过。安装后 481MB、安装包 136.8MB、便携 186.6MB（比 2.1.1 大是因为新增了 PDF/Office 依赖 pdfjs-dist/canvas/jszip + 市场用的内置 npm）。
+
+### 产物（release/）
+
+- `DeepSeek-Client-Setup-3.0.0.exe`（安装版）
+- `DeepSeekClient-portable-3.0.0-win-x64.zip`（便携绿色版）
+
+---
+
 ## v2.1.1：体积精简（615MB → 434MB，-181MB）
 
 用户朋友反馈安装后 600+MB（我之前报的 167MB 是**压缩安装包**，不是安装后磁盘占用，是我的表述错误）。
