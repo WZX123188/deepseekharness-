@@ -196,3 +196,24 @@ installer.nsh 快捷方式勾选页，说明.txt（UTF-8 BOM + 免责声明）�
 3. Office 全家桶拖拽 2.2.1（Word/PPT/Excel + WPS，预览→审核→保存）。
 4. 视频剪辑（OBS/达芬奇）——方案待用户审核。
 5. 自定义界面背景。
+
+---
+
+## v2.1.1：体积精简（615MB → 434MB，-181MB）
+
+用户朋友反馈安装后 600+MB（我之前报的 167MB 是**压缩安装包**，不是安装后磁盘占用，是我的表述错误）。
+
+- **根因**：安装后 = Electron 202 + 内置 Node 101 + 内置 DSH 运行时 246 + 其它 66 ≈ 615MB。
+- **精简动作**（`desktop/strip-runtime.mjs`，Node 递归删除，处理长路径）：
+  1. dsh-runtime 删 `*.map`(36.8) + `*.d.ts`(22.7) + README/CHANGELOG(6.8) + 测试文件(1.4) = -67MB；
+  2. node-pty 删 `.pdb` 调试符号(52.8) + 非 win32-x64 预编译 + C++/python 源码 = -60MB；
+  3. 删内置 node 里的 npm(12.4，新版已不用 npm install -g)。
+  4. `package.json` 加 `electronLanguages: ["zh-CN","en-US"]` → 语言文件 55 个(40.3MB) 减到 2 个(0.9MB)。
+- 结果：安装后 434MB，安装包 167→123.9MB，便携 zip 219→169.5MB。
+- 已验证：精简后 `dsh web` 端到端启动 HTTP 200、gate+static 无报错加载。
+- `make-portable.ps1` 改用 `robocopy /MIR`（镜像，避免长路径残留）。
+
+### 仍可继续压（更激进，需逐项测试）
+
+- 其它 LLM 厂商 SDK（openai/mistralai/anthropic/google/aws ≈37MB）、@opentelemetry(20MB) —— 非 DeepSeek 必需，但需 test-boot 验证移除不破坏 llm 服务。
+- 理论上极限：Electron 202 + Node 88 是硬成本，最瘦约 300MB 出头。
