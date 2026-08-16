@@ -20,7 +20,8 @@ window.__ModuleLoader__.load({
       direct("listTools"), direct("installTool", [argsParam()]), direct("setToolEnabled", [argsParam()]), direct("uninstallTool", [argsParam()]),
       direct("listPlugins"), direct("installPlugin", [argsParam()]), direct("setPluginEnabled", [argsParam()]), direct("uninstallPlugin", [argsParam()]),
       direct("listProjects"), direct("createProject", [argsParam()]), direct("openFeedback", [argsParam()]),
-      direct("getVisionStatus"), direct("setVisionKey", [argsParam()]), direct("clearVisionKey"), direct("testVision"), direct("seeImage", [argsParam()]), direct("openVisionSite")
+      direct("getVisionStatus"), direct("setVisionKey", [argsParam()]), direct("clearVisionKey"), direct("testVision"), direct("seeImage", [argsParam()]), direct("openVisionSite"),
+      direct("translateText", [argsParam()]), direct("translatePdf", [argsParam()])
     ]
 
     var BLUE = "#4d6bfe"
@@ -258,6 +259,42 @@ window.__ModuleLoader__.load({
         el("div", { className: "dsh-card" }, el("div", { className: "dsh-h2", style: { marginBottom: "8px" } }, "快捷操作"),
           el("div", { className: "dsh-muted" }, "· Ctrl+Alt+D：呼出 / 隐藏窗口。"),
           el("div", { className: "dsh-muted" }, "· 右下角托盘：显示 / 退出、窗口置顶、开机自启开关。")))
+    }
+
+    function PdfSection() {
+      var s = React.useState(""); var status = s[0]; var setStatus = s[1]
+      var p = React.useState(null); var pages = p[0]; var setPages = p[1]
+      var b = React.useState(false); var busy = b[0]; var setBusy = b[1]
+      var m = React.useState(""); var msg = m[0]; var setMsg = m[1]
+      function onFile(e) {
+        var f = e.target.files && e.target.files[0]
+        if (!f) return
+        setStatus("reading"); setPages(null); setMsg("")
+        var rd = new FileReader()
+        rd.onload = function () {
+          setBusy(true); setStatus("translating"); setMsg("")
+          callHost("translatePdf", { pdf: rd.result }).then(function (res) {
+            setBusy(false)
+            if (res && res.ok) { setPages(res.pages); setStatus("done"); setMsg("完成 ✓ 共 " + res.pages.length + " 页 · " + (res.mode === "scan" ? "扫描版（OCR）" : res.mode === "scan-nokey" ? "扫描版需配置视觉Key" : "文字版")) }
+            else { setStatus("error"); setMsg((res && res.error) || "翻译失败") }
+          }).catch(function (err) { setBusy(false); setStatus("error"); setMsg(String((err && err.message) || err)) })
+        }
+        rd.readAsDataURL(f)
+      }
+      return el("div", { className: "dsh-page" },
+        el("div", { className: "dsh-head" }, el("h2", { className: "dsh-h2" }, "PDF 翻译")),
+        el("div", { className: "dsh-card" },
+          el("div", { className: "dsh-muted", style: { marginBottom: "10px" } }, "上传英文 PDF（数据手册 / 文档），自动判断文字版或扫描版并翻译成中文；专业术语、数字、引脚名保持原文。"),
+          el("input", { type: "file", accept: ".pdf,application/pdf", onChange: onFile, disabled: busy, className: "dsh-input" }),
+          busy ? el("div", { className: "dsh-muted", style: { marginTop: "10px" } }, "翻译中，请耐心等待…") : null,
+          msg ? el("div", { className: msg.indexOf("完成") !== -1 ? "dsh-ok" : "dsh-err", style: { marginTop: "10px" } }, msg) : null),
+        pages && pages.length ? pages.map(function (pg, idx) {
+          return el("div", { className: "dsh-card", key: idx, style: { marginTop: "10px" } },
+            el("div", { className: "dsh-h2", style: { marginBottom: "8px" } }, "第 " + pg.page + " 页"),
+            el("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" } },
+              el("div", {}, el("div", { className: "dsh-muted", style: { marginBottom: "4px" } }, "原文"), el("div", { className: "dsh-muted", style: { whiteSpace: "pre-wrap", fontSize: "12px", lineHeight: "1.7" } }, pg.original)),
+              el("div", {}, el("div", { className: "dsh-muted", style: { marginBottom: "4px" } }, "译文"), el("div", { style: { whiteSpace: "pre-wrap", fontSize: "13px", lineHeight: "1.8" } }, pg.translated))))
+        }) : null)
     }
 
     function ProjectsSection() {
@@ -514,6 +551,7 @@ window.__ModuleLoader__.load({
       section("dsh-feedback", 46, "意见区", FeedbackSection)
       section("dsh-permission", 6, "权限", PermissionSection)
       section("dsh-vision", 25, "视图模式", VisionSection)
+      section("dsh-pdf", 26, "PDF 翻译", PdfSection)
 
       // 视图模式开关：放到首页对话框（输入框工具行左侧）
       ctx.slots.inject("conversation.input.left", function () {

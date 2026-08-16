@@ -2,7 +2,7 @@
 // 用 src-json 宽松编解码，免编译器。权限门仍由 dsh-client-gate 提供，这里不含。
 import os from 'node:os'
 import path from 'node:path'
-import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs'
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 
 // 数据落点：优先 DSH_HOME（客户端隔离），否则回退 ~/.dsh
@@ -48,6 +48,21 @@ let visionKey = ''
 function balanceScript() { return "(async()=>{try{const r=await fetch('" + BALANCE_URL + "',{headers:{Authorization:'Bearer '+process.env.DSH_BALANCE_KEY,Accept:'application/json'}});const t=await r.text();console.log(JSON.stringify({status:r.status,body:t}))}catch(e){console.error(String((e&&e.stack)||e));process.exit(1)}})()" }
 function latestScript() { return "(async()=>{const r=await fetch('" + REGISTRY_LATEST + "');const j=await r.json();console.log(String(j.version||''))})().catch(e=>{console.error(String((e&&e.stack)||e));process.exit(1)})" }
 function githubScript() { return "(async()=>{try{const r=await fetch('" + GITHUB_RELEASES + "',{headers:{'User-Agent':'dsh-client'}});if(r.status===404){console.log(JSON.stringify({tag:'',name:'',html:'',status:404}));return}const j=await r.json();console.log(JSON.stringify({tag:(j&&j.tag_name)||'',name:(j&&j.name)||'',html:(j&&j.html_url)||'',status:r.status}))}catch(e){console.log(JSON.stringify({tag:'',name:'',html:'',status:0,error:String((e&&e.message)||e)}))}})()" }
+
+// ---- PDF 翻译工具（pdfjs-dist 提取文字 + @napi-rs/canvas 渲染扫描页）----
+function pdfToolsNodeModules() {
+  const candidates = [
+    path.join(path.dirname(process.execPath), '..', 'dsh-runtime', 'node_modules', 'pdf-tools', 'node_modules'),
+    path.join(path.dirname(process.execPath), 'node_modules', 'pdf-tools', 'node_modules'),
+    path.join(HOME, 'pdf-tools', 'node_modules')
+  ]
+  for (const c of candidates) { try { if (existsSync(c)) return c } catch (e) {} }
+  return candidates[0]
+}
+function pdfjsLegacyPath() { return path.join(pdfToolsNodeModules(), 'pdfjs-dist', 'legacy', 'build', 'pdf.mjs').replace(/\\/g, '/') }
+function canvasEsmPath() { return path.join(pdfToolsNodeModules(), '@napi-rs', 'canvas', 'index.js').replace(/\\/g, '/') }
+function extractPdfScript() { return "(async()=>{try{const fs=require('fs');const buf=fs.readFileSync(process.env.DSH_F);const pdfjs=await import('file:///" + pdfjsLegacyPath() + "');const doc=await pdfjs.getDocument({data:new Uint8Array(buf),useWorkerFetch:false,isEvalSupported:false,disableFontFace:true}).promise;const pages=[];for(let i=1;i<=doc.numPages;i++){const pg=await doc.getPage(i);const tc=await pg.getTextContent();pages.push({page:i,text:tc.items.map(function(x){return x.str}).join(' ')});}console.log(JSON.stringify({pages:pages}));}catch(e){console.error(String((e&&e.stack)||e));process.exit(1)}})()" }
+function renderPdfScript() { return "(async()=>{try{const fs=require('fs');const path=require('path');const buf=fs.readFileSync(process.env.DSH_F);const out=process.env.DSH_OUT;fs.mkdirSync(out,{recursive:true});const pdfjs=await import('file:///" + pdfjsLegacyPath() + "');const cvmod=await import('file:///" + canvasEsmPath() + "');const createCanvas=cvmod.createCanvas;const doc=await pdfjs.getDocument({data:new Uint8Array(buf),useWorkerFetch:false,isEvalSupported:false,disableFontFace:true}).promise;let n=0;for(let i=1;i<=doc.numPages;i++){const pg=await doc.getPage(i);const vp=pg.getViewport({scale:2});const cv=createCanvas(vp.width,vp.height);const c2=cv.getContext('2d');await pg.render({canvasContext:c2,viewport:vp}).promise;fs.writeFileSync(path.join(out,String(i)+'.png'),cv.toBuffer('image/png'));n++;}console.log(JSON.stringify({count:n}));}catch(e){console.error(String((e&&e.stack)||e));process.exit(1)}})()" }
 
 export class DshClientFeaturesService extends TypertRemoteService {
   constructor(ctx) {
@@ -403,6 +418,82 @@ export class DshClientFeaturesService extends TypertRemoteService {
     try {
       await this.runCmd(['start', '', VISION_SITE], 8000)
       return { ok: true }
+    } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
+  }
+
+  // DeepSeek 翻译（技术文档向，专业术语/引脚名保持原文）
+  async translateText(args) {
+    try {
+      const credentials = this.ctx.get('credentials')
+      if (!credentials) return { ok: false, error: '凭据服务不可用' }
+      const resolved = await credentials.resolve('DEEPSEEK_API_KEY')
+      if (!resolved || typeof resolved.value !== 'string' || resolved.value === '') return { ok: false, error: '未配置 DeepSeek API Key' }
+      const text = args && args.text
+      if (typeof text !== 'string' || text.trim() === '') return { ok: false, error: '没有待翻译文本' }
+      const target = (args && args.target) || '中文'
+      const sys = '你是专业技术文档翻译引擎。把用户给出的英文技术资料精确翻译成' + target + '：专业术语、数字、单位、型号、寄存器名、引脚名（如 VCC、GND、I2C、SCL、SDA、UART、SPI、GPIO、PWM）保持原文不译；保留段落与编号；只输出译文，不要任何解释或前缀。'
+      const res = await fetch('https://api.deepseek.com/chat/completions', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + resolved.value }, body: JSON.stringify({ model: 'deepseek-chat', messages: [{ role: 'system', content: sys }, { role: 'user', content: text }], temperature: 0.2 }) })
+      const t = await res.text()
+      if (res.status !== 200) {
+        let msg = '翻译失败（HTTP ' + res.status + '）'
+        try { const b = JSON.parse(t); if (b && b.error && b.error.message) msg = String(b.error.message) } catch (e) {}
+        return { ok: false, error: msg }
+      }
+      let content = ''
+      try { const b = JSON.parse(t); content = (b.choices && b.choices[0] && b.choices[0].message && b.choices[0].message.content) || '' } catch (e) {}
+      if (typeof content !== 'string') content = JSON.stringify(content)
+      return { ok: true, text: content }
+    } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
+  }
+
+  // PDF 全文翻译：文字版直接抽文字翻；扫描版渲染每页→GLM OCR→翻
+  async translatePdf(args) {
+    try {
+      const b64 = args && args.pdf
+      if (typeof b64 !== 'string' || b64 === '') return { ok: false, error: '没有 PDF 数据' }
+      const credentials = this.ctx.get('credentials')
+      if (!credentials) return { ok: false, error: '凭据服务不可用' }
+      const dsk = await credentials.resolve('DEEPSEEK_API_KEY')
+      if (!dsk || typeof dsk.value !== 'string' || dsk.value === '') return { ok: false, error: '未配置 DeepSeek API Key' }
+      const raw = String(b64).replace(/^data:[^;]*;base64,/, '')
+      const buf = Buffer.from(raw, 'base64')
+      const tmp = path.join(os.tmpdir(), 'dsh-pdf-' + Date.now() + '-' + Math.floor(Math.random() * 1e6) + '.pdf')
+      writeFileSync(tmp, buf)
+      try {
+        const ext = await this.runNode(extractPdfScript(), { DSH_F: tmp }, 120000)
+        let pages = []
+        try { pages = (JSON.parse((ext.stdout || '').trim().split(/\r?\n/).filter(Boolean).pop() || '{"pages":[]}')).pages || [] } catch (e) {}
+        const hasText = pages.some((p) => (p.text || '').trim().length > 20)
+        const result = []
+        if (hasText) {
+          for (const p of pages) {
+            const txt = (p.text || '').trim()
+            if (!txt) continue
+            const tr = await this.translateText({ text: txt })
+            result.push({ page: p.page, original: txt, translated: tr.ok ? tr.text : '[翻译失败] ' + (tr.error || '') })
+          }
+          return { ok: true, pages: result, mode: 'text' }
+        }
+        if (!visionKey) return { ok: true, pages: [{ page: 0, original: '这是扫描版 PDF（无文字层）。', translated: '识别扫描件需要配置智谱视觉 Key（设置→视图模式）。' }], mode: 'scan-nokey' }
+        const outDir = path.join(os.tmpdir(), 'dsh-pdf-out-' + Date.now())
+        const rnd = await this.runNode(renderPdfScript(), { DSH_F: tmp, DSH_OUT: outDir }, 240000)
+        let count = 0
+        try { count = (JSON.parse((rnd.stdout || '').trim().split(/\r?\n/).filter(Boolean).pop() || '{"count":0}')).count || 0 } catch (e) {}
+        for (let i = 1; i <= count; i++) {
+          const png = path.join(outDir, String(i) + '.png')
+          let dataUrl = ''
+          try { dataUrl = 'data:image/png;base64,' + readFileSync(png).toString('base64') } catch (e) {}
+          if (!dataUrl) continue
+          const ocr = await this.seeImage({ image: dataUrl, prompt: '请原样、完整地识别这张数据手册页面里的所有英文与数字，不要翻译、不要遗漏、保持段落顺序。' })
+          const original = ocr.ok ? ocr.text : '[OCR失败] ' + (ocr.error || '')
+          const tr = ocr.ok ? await this.translateText({ text: original }) : { ok: false, error: 'OCR失败' }
+          result.push({ page: i, original: original, translated: (tr && tr.ok) ? tr.text : '[翻译失败]' })
+        }
+        try { for (let i = 1; i <= count; i++) unlinkSync(path.join(outDir, String(i) + '.png')) } catch (e) {}
+        return { ok: true, pages: result, mode: 'scan' }
+      } finally {
+        try { unlinkSync(tmp) } catch (e) {}
+      }
     } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
   }
 }
