@@ -19,9 +19,12 @@ const USAGE_PATH = path.join(HOME, 'dsh-client-usage.json')
 const MCP_DIR = path.join(HOME, 'mcp-tools')                       // 市场工具隔离安装目录（不碰全局 npm）
 const PROFILE_PATCH = path.join(HOME, 'profiles', 'web', 'cordis.patch.yml')
 
-// 视图模式：智谱 GLM-4V-Flash（免费国产视觉模型，OpenAI 兼容接口）
+// 视图模式：智谱免费视觉模型（OpenAI 兼容接口）。
+// 注意：智谱 API Key 不以 sk- 开头，前缀/格式不固定（常见形如「32位十六进制.32位十六进制」两段式），
+// 保存时只去空白与误贴的引号，不做任何前缀限制。
 const VISION_URL = 'https://open.bigmodel.cn/api/paas/v4/chat/completions'
-const VISION_MODEL = 'glm-4v-flash'
+const VISION_MODELS = ['glm-4.6v-flash', 'glm-4v-flash']
+const VISION_MODEL = VISION_MODELS[0]
 const VISION_SITE = 'https://open.bigmodel.cn/'
 
 const BALANCE_URL = 'https://api.deepseek.com/user/balance'
@@ -50,6 +53,35 @@ const PLUGINS = [
 
 let permissionMode = 'ask'
 let visionKey = ''
+
+// ---- 智谱视觉请求：模型不可用（404 / 400 且错误信息提到模型不存在）时自动换下一个模型重试；
+//      鉴权/网络类错误直接返回，不做无谓重试 ----
+function visionModelGone(status, text) {
+  if (status === 404) return true
+  if (status !== 400) return false
+  return /model|not\s*exist|不存在|无此|not\s*found/i.test(text)
+}
+function visionErrorMessage(status, text) {
+  let msg = '连接失败（HTTP ' + status + '）'
+  try { const b = JSON.parse(text); if (b && b.error && b.error.message) msg = String(b.error.message) } catch (e) {}
+  return msg
+}
+async function visionRequest(body) {
+  let last = { status: 0, text: '' }
+  for (let i = 0; i < VISION_MODELS.length; i++) {
+    let res, text
+    try {
+      res = await fetch(VISION_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + visionKey }, body: JSON.stringify(Object.assign({}, body, { model: VISION_MODELS[i] })) })
+      text = await res.text()
+    } catch (e) {
+      return { ok: false, error: String((e && e.message) || e) }
+    }
+    if (res.status === 200) return { ok: true, text, model: VISION_MODELS[i] }
+    if (!visionModelGone(res.status, text)) return { ok: false, error: visionErrorMessage(res.status, text) }
+    last = { status: res.status, text }
+  }
+  return { ok: false, error: visionErrorMessage(last.status, last.text) }
+}
 
 function balanceScript() { return "(async()=>{try{const r=await fetch('" + BALANCE_URL + "',{headers:{Authorization:'Bearer '+process.env.DSH_BALANCE_KEY,Accept:'application/json'}});const t=await r.text();console.log(JSON.stringify({status:r.status,body:t}))}catch(e){console.error(String((e&&e.stack)||e));process.exit(1)}})()" }
 function latestScript() { return "(async()=>{const r=await fetch('" + REGISTRY_LATEST + "');const j=await r.json();console.log(String(j.version||''))})().catch(e=>{console.error(String((e&&e.stack)||e));process.exit(1)})" }
@@ -369,9 +401,13 @@ export class DshClientFeaturesService extends TypertRemoteService {
   }
 
   async setVisionKey(args) {
-    const k = args && args.key
+    let k = args && args.key
     if (typeof k !== 'string') return { ok: false, error: '无效的 Key' }
-    visionKey = k.trim()
+    k = k.trim()
+    // 粘贴时常带成对引号，顺手去掉；智谱 Key 不以 sk- 开头、格式不固定，这里不做任何前缀/格式限制
+    if (k.length > 1 && (k[0] === '"' || k[0] === "'" || k[0] === '`') && k.endsWith(k[0])) k = k.slice(1, -1).trim()
+    if (k.length === 0) return { ok: false, error: 'Key 不能为空' }
+    visionKey = k
     const cfg = await this.readJsonFile(CONFIG_PATH)
     cfg.visionKey = visionKey
     await this.writeJsonFile(CONFIG_PATH, cfg)
@@ -388,35 +424,25 @@ export class DshClientFeaturesService extends TypertRemoteService {
 
   async testVision() {
     try {
-      if (!visionKey) return { ok: false, error: '请先填写并保存智谱 API Key' }
-      const res = await fetch(VISION_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + visionKey }, body: JSON.stringify({ model: VISION_MODEL, messages: [{ role: 'user', content: 'ping' }] }) })
-      const text = await res.text()
-      if (res.status !== 200) {
-        let msg = '连接失败（HTTP ' + res.status + '）'
-        try { const b = JSON.parse(text); if (b && b.error && b.error.message) msg = String(b.error.message) } catch (e) {}
-        return { ok: false, error: msg }
-      }
+      if (!visionKey) return { ok: false, error: '请先填写并保存智谱 API Key（不以 sk- 开头，格式不固定，直接粘贴官网复制的完整 Key 即可）' }
+      const r = await visionRequest({ messages: [{ role: 'user', content: 'ping' }] })
+      if (!r.ok) return { ok: false, error: r.error }
       return { ok: true }
     } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
   }
 
   async seeImage(args) {
     try {
-      if (!visionKey) return { ok: false, error: '未配置智谱视觉 API Key：请先在「视图模式」页点「去官网申请」领免费 Key 并保存。' }
+      if (!visionKey) return { ok: false, error: '未配置智谱视觉 API Key：请先在「视图模式」页点「去官网申请」领免费 Key 并保存（智谱 Key 不带 sk- 前缀，格式不固定）。' }
       const image = args && args.image
       if (typeof image !== 'string' || image === '') return { ok: false, error: '没有图片数据' }
       const prompt = (args && args.prompt) || '请详细、准确地描述这张图片里的全部内容，包括文字、数字、图表和结构。'
-      const res = await fetch(VISION_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + visionKey }, body: JSON.stringify({ model: VISION_MODEL, messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: image } }, { type: 'text', text: prompt }] }] }) })
-      const text = await res.text()
-      if (res.status !== 200) {
-        let msg = '识别失败（HTTP ' + res.status + '）'
-        try { const b = JSON.parse(text); if (b && b.error && b.error.message) msg = String(b.error.message) } catch (e) {}
-        return { ok: false, error: msg }
-      }
+      const r = await visionRequest({ messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: image } }, { type: 'text', text: prompt }] }] })
+      if (!r.ok) return { ok: false, error: r.error }
       let content = ''
-      try { const b = JSON.parse(text); content = (b.choices && b.choices[0] && b.choices[0].message && b.choices[0].message.content) || '' } catch (e) {}
+      try { const b = JSON.parse(r.text); content = (b.choices && b.choices[0] && b.choices[0].message && b.choices[0].message.content) || '' } catch (e) {}
       if (typeof content !== 'string') content = JSON.stringify(content)
-      return { ok: true, text: content, model: VISION_MODEL }
+      return { ok: true, text: content, model: r.model }
     } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
   }
 
@@ -514,6 +540,66 @@ export class DshClientFeaturesService extends TypertRemoteService {
         }
         try { for (let i = 1; i <= count; i++) unlinkSync(path.join(outDir, String(i) + '.png')) } catch (e) {}
         return { ok: true, pages: result, mode: 'scan' }
+      } finally {
+        try { unlinkSync(tmp) } catch (e) {}
+      }
+    } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
+  }
+
+  // 网页 PDF 实时翻译第一步：只解析不翻译，返回每页原文（文字版）或每页图片（扫描版），
+  // 客户端再逐页调 translateText / seeImage，翻完一页立刻显示一页。
+  async pdfProbe(args) {
+    try {
+      const b64 = args && args.pdf
+      if (typeof b64 !== 'string' || b64 === '') return { ok: false, error: '没有 PDF 数据' }
+      const raw = String(b64).replace(/^data:[^;]*;base64,/, '')
+      const buf = Buffer.from(raw, 'base64')
+      const tmp = path.join(os.tmpdir(), 'dsh-pdf-' + Date.now() + '-' + Math.floor(Math.random() * 1e6) + '.pdf')
+      writeFileSync(tmp, buf)
+      try {
+        const ext = await this.runNode(extractPdfScript(), { DSH_F: tmp }, 120000)
+        let pages = []
+        try { pages = (JSON.parse((ext.stdout || '').trim().split(/\r?\n/).filter(Boolean).pop() || '{"pages":[]}')).pages || [] } catch (e) {}
+        const hasText = pages.some((p) => (p.text || '').trim().length > 20)
+        if (hasText) {
+          return { ok: true, mode: 'text', pages: pages.map((p) => ({ page: p.page, text: (p.text || '').trim() })) }
+        }
+        if (!visionKey) return { ok: true, mode: 'scan-nokey', pages: [] }
+        const outDir = path.join(os.tmpdir(), 'dsh-pdf-out-' + Date.now())
+        const rnd = await this.runNode(renderPdfScript(), { DSH_F: tmp, DSH_OUT: outDir }, 240000)
+        let count = 0
+        try { count = (JSON.parse((rnd.stdout || '').trim().split(/\r?\n/).filter(Boolean).pop() || '{"count":0}')).count || 0 } catch (e) {}
+        const imgs = []
+        for (let i = 1; i <= count; i++) {
+          const png = path.join(outDir, String(i) + '.png')
+          let dataUrl = ''
+          try { dataUrl = 'data:image/png;base64,' + readFileSync(png).toString('base64') } catch (e) {}
+          if (dataUrl) imgs.push({ page: i, image: dataUrl })
+        }
+        try { for (let i = 1; i <= count; i++) unlinkSync(path.join(outDir, String(i) + '.png')) } catch (e) {}
+        return { ok: true, mode: 'scan', pages: imgs }
+      } finally {
+        try { unlinkSync(tmp) } catch (e) {}
+      }
+    } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
+  }
+
+  // 网页 Office 实时翻译第一步：只提取不翻译，返回逐段原文，客户端逐段翻译实时显示
+  async officeProbe(args) {
+    try {
+      const b64 = args && args.file
+      const filename = (args && args.filename) || 'document.docx'
+      if (typeof b64 !== 'string' || b64 === '') return { ok: false, error: '没有文件数据' }
+      const raw = String(b64).replace(/^data:[^;]*;base64,/, '')
+      const tmp = path.join(os.tmpdir(), 'dsh-office-' + Date.now() + '-' + Math.floor(Math.random() * 1e6) + (path.extname(filename) || '.docx'))
+      writeFileSync(tmp, Buffer.from(raw, 'base64'))
+      try {
+        const jz = JSZIP_ENTRY()
+        const ext = await this.runNodeFile(OFFICE_MJS, ['extract', tmp, jz], {}, 120000)
+        const parsed = JSON.parse((ext.stdout || '').trim().split(/\r?\n/).filter(Boolean).pop() || '{"chunks":[]}')
+        const chunks = parsed.chunks || []
+        if (chunks.length === 0) return { ok: false, error: '未能从文档中提取到文本（可能是纯图片或空文档）' }
+        return { ok: true, type: parsed.type || 'docx', chunks }
       } finally {
         try { unlinkSync(tmp) } catch (e) {}
       }

@@ -22,6 +22,7 @@ window.__ModuleLoader__.load({
       direct("listProjects"), direct("createProject", [argsParam()]), direct("openFeedback", [argsParam()]),
       direct("getVisionStatus"), direct("setVisionKey", [argsParam()]), direct("clearVisionKey"), direct("testVision"), direct("seeImage", [argsParam()]), direct("openVisionSite"),
       direct("translateText", [argsParam()]), direct("translatePdf", [argsParam()]),
+      direct("pdfProbe", [argsParam()]), direct("officeProbe", [argsParam()]),
       direct("translateOffice", [argsParam()]), direct("saveOffice", [argsParam()]),
       direct("getWallpaper"), direct("setWallpaper", [argsParam()])
     ]
@@ -54,7 +55,15 @@ window.__ModuleLoader__.load({
       ".dsh-vision-btn{position:relative;background:transparent;border:none;cursor:pointer;font-size:13px;color:inherit;padding:4px 8px;border-radius:8px;opacity:.82}",
       ".dsh-vision-btn:hover{background:rgba(127,127,127,.14);opacity:1}",
       ".dsh-vision-dot{position:absolute;top:3px;right:3px;width:6px;height:6px;border-radius:50%;background:#30a46c}",
-      ".dsh-vision-pop{position:absolute;bottom:44px;left:0;width:340px;max-height:62vh;overflow-y:auto;background:#fff;border:1px solid rgba(127,127,127,.2);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.25);padding:14px;z-index:1000;color:#333;text-align:left}"
+      ".dsh-vision-pop{position:absolute;bottom:44px;left:0;width:340px;max-height:62vh;overflow-y:auto;background:#fff;border:1px solid rgba(127,127,127,.2);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.25);padding:14px;z-index:1000;color:#333;text-align:left}",
+      ".dsh-dropzone{border:2px dashed rgba(127,127,127,.35);border-radius:12px;padding:18px;text-align:center;color:rgba(127,127,127,.75);font-size:13px;cursor:pointer;transition:border-color .15s,background .15s}",
+      ".dsh-dropzone.dsh-over{border-color:" + BLUE + ";background:rgba(77,107,254,.08);color:" + BLUE + "}",
+      ".dsh-modal-mask{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9000;display:flex;align-items:center;justify-content:center;padding:24px}",
+      ".dsh-modal{background:#fff;color:#222;border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.35);width:min(920px,96vw);max-height:88vh;display:flex;flex-direction:column;overflow:hidden}",
+      ".dsh-modal-head{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid rgba(127,127,127,.18);font-size:15px;font-weight:600}",
+      ".dsh-modal-body{flex:1;min-height:0;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px}",
+      ".dsh-modal-close{margin-left:auto;background:none;border:none;font-size:18px;cursor:pointer;color:#666;padding:2px 8px;border-radius:6px}",
+      ".dsh-modal-close:hover{background:rgba(127,127,127,.15)}"
     ].join("\n")
 
     function el(tag, props) {
@@ -268,34 +277,71 @@ window.__ModuleLoader__.load({
       var p = React.useState(null); var pages = p[0]; var setPages = p[1]
       var b = React.useState(false); var busy = b[0]; var setBusy = b[1]
       var m = React.useState(""); var msg = m[0]; var setMsg = m[1]
+      var fn = React.useState(""); var fileName = fn[0]; var setFileName = fn[1]
+      var pr = React.useState(null); var prog = pr[0]; var setProg = pr[1]
+      var dr = React.useState(false); var over = dr[0]; var setOver = dr[1]
+
       function onFile(e) {
         var f = e.target.files && e.target.files[0]
         if (!f) return
-        setStatus("reading"); setPages(null); setMsg("")
+        translateFile(f)
+        if (e.target) e.target.value = ""
+      }
+      function onDrop(e) {
+        setOver(false)
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) translateFile(e.dataTransfer.files[0])
+      }
+      function findPage(list, page) {
+        for (var i = 0; i < list.length; i++) if (list[i].page === page) return i
+        return -1
+      }
+      function translateFile(f) {
+        var ext = (f.name.toLowerCase().match(/\.(pdf)$/) || [])[1]
+        if (!ext) { setMsg("只支持 .pdf 文件"); return }
+        setFileName(f.name); setPages([]); setProg(null); setMsg(""); setStatus("translating"); setBusy(true)
         var rd = new FileReader()
         rd.onload = function () {
-          setBusy(true); setStatus("translating"); setMsg("")
-          callHost("translatePdf", { pdf: rd.result }).then(function (res) {
-            setBusy(false)
-            if (res && res.ok) { setPages(res.pages); setStatus("done"); setMsg("完成 ✓ 共 " + res.pages.length + " 页 · " + (res.mode === "scan" ? "扫描版（OCR）" : res.mode === "scan-nokey" ? "扫描版需配置视觉Key" : "文字版")) }
-            else { setStatus("error"); setMsg((res && res.error) || "翻译失败") }
-          }).catch(function (err) { setBusy(false); setStatus("error"); setMsg(String((err && err.message) || err)) })
+          var list = []
+          startRealTimeTranslate("pdf", rd.result, f.name, function (ev) {
+            if (ev.type === "start") { setProg({ done: 0, total: ev.total, mode: ev.mode }) }
+            else if (ev.type === "progress") { setProg({ done: ev.done, total: ev.total }) }
+            else if (ev.type === "pageState") {
+              var idx = findPage(list, ev.page)
+              if (idx >= 0) list[idx] = { page: ev.page, original: list[idx].original || "", translated: list[idx].translated || "", state: ev.state }
+              else list.push({ page: ev.page, original: "", translated: "", state: ev.state })
+              setPages(list.slice())
+            }
+            else if (ev.type === "page") {
+              var ix = findPage(list, ev.page)
+              if (ix >= 0) list[ix] = { page: ev.page, original: ev.original, translated: ev.translated, state: "done" }
+              else list.push({ page: ev.page, original: ev.original, translated: ev.translated, state: "done" })
+              setPages(list.slice())
+            }
+            else if (ev.type === "done") { setBusy(false); setStatus("done"); setMsg("完成 ✓ 共 " + ev.total + " 页 · " + (ev.mode === "scan" ? "扫描版（OCR）" : "文字版（逐页实时翻译）")) }
+            else if (ev.type === "error") { setBusy(false); setStatus("error"); setMsg(ev.message) }
+          })
         }
         rd.readAsDataURL(f)
       }
       return el("div", { className: "dsh-page" },
         el("div", { className: "dsh-head" }, el("h2", { className: "dsh-h2" }, "PDF 翻译")),
         el("div", { className: "dsh-card" },
-          el("div", { className: "dsh-muted", style: { marginBottom: "10px" } }, "上传英文 PDF（数据手册 / 文档），自动判断文字版或扫描版并翻译成中文；专业术语、数字、引脚名保持原文。"),
-          el("input", { type: "file", accept: ".pdf,application/pdf", onChange: onFile, disabled: busy, className: "dsh-input" }),
-          busy ? el("div", { className: "dsh-muted", style: { marginTop: "10px" } }, "翻译中，请耐心等待…") : null,
+          el("div", { className: "dsh-muted", style: { marginBottom: "10px" } }, "把英文 PDF（数据手册 / 文档）拖进来，或点下面区域选择文件。自动判断文字版 / 扫描版，逐页实时识别翻译：翻完一页立刻显示一页，不用等全部完成。专业术语、数字、引脚名保持原文。"),
+          el("div", { className: "dsh-dropzone" + (over ? " dsh-over" : ""), onClick: function () { var inp = document.getElementById("dsh-pdf-file"); if (inp) inp.click() }, onDragOver: function (e) { e.preventDefault(); setOver(true) }, onDragLeave: function () { setOver(false) }, onDrop: onDrop },
+            el("div", {}, "📄 把 PDF 拖到这里，或点此选择文件")),
+          el("input", { id: "dsh-pdf-file", type: "file", accept: ".pdf,application/pdf", onChange: onFile, disabled: busy, style: { display: "none" } }),
+          prog ? el("div", { className: "dsh-muted", style: { marginTop: "10px" } }, "实时翻译中：" + prog.done + " / " + prog.total + " 页…") : null,
           msg ? el("div", { className: msg.indexOf("完成") !== -1 ? "dsh-ok" : "dsh-err", style: { marginTop: "10px" } }, msg) : null),
         pages && pages.length ? pages.map(function (pg, idx) {
+          var body
+          if (pg.state === "ocr") body = el("div", { className: "dsh-muted" }, "识别中…")
+          else if (pg.state === "translating") body = el("div", { className: "dsh-muted" }, "翻译中…")
+          else body = el("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" } },
+            el("div", {}, el("div", { className: "dsh-muted", style: { marginBottom: "4px" } }, "原文"), el("div", { className: "dsh-muted", style: { whiteSpace: "pre-wrap", fontSize: "12px", lineHeight: "1.7" } }, pg.original)),
+            el("div", {}, el("div", { className: "dsh-muted", style: { marginBottom: "4px" } }, "译文"), el("div", { style: { whiteSpace: "pre-wrap", fontSize: "13px", lineHeight: "1.8" } }, pg.translated)))
           return el("div", { className: "dsh-card", key: idx, style: { marginTop: "10px" } },
-            el("div", { className: "dsh-h2", style: { marginBottom: "8px" } }, "第 " + pg.page + " 页"),
-            el("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" } },
-              el("div", {}, el("div", { className: "dsh-muted", style: { marginBottom: "4px" } }, "原文"), el("div", { className: "dsh-muted", style: { whiteSpace: "pre-wrap", fontSize: "12px", lineHeight: "1.7" } }, pg.original)),
-              el("div", {}, el("div", { className: "dsh-muted", style: { marginBottom: "4px" } }, "译文"), el("div", { style: { whiteSpace: "pre-wrap", fontSize: "13px", lineHeight: "1.8" } }, pg.translated))))
+            el("div", { className: "dsh-h2", style: { marginBottom: "8px" } }, "第 " + pg.page + " 页" + (pg.state === "done" ? "" : "（" + (pg.state === "ocr" ? "识别中" : "翻译中") + "…）")),
+            body)
         }) : null)
     }
 
@@ -313,42 +359,188 @@ window.__ModuleLoader__.load({
       } catch (e) {}
     }
 
+    // 网页 PDF / Office 实时翻译核心流程：先解析（pdfProbe / officeProbe），
+    // 再逐页/逐段串行翻译（translateText / seeImage），每完成一项立刻通过 onState 推送。
+    // onState 事件：start{total,mode} / progress{done,total} / pageState{page,state} /
+    // page{page,original,translated} / chunk{key,original,translated} / done{mode,total} / error{message}
+    function startRealTimeTranslate(kind, dataUrl, filename, onState) {
+      var cancelled = false
+      var ctl = { cancel: function () { cancelled = true } }
+      ;(async function () {
+        try {
+          if (kind === "pdf") {
+            var probe = await callHost("pdfProbe", { pdf: dataUrl })
+            if (!probe.ok) { onState({ type: "error", message: probe.error || "解析 PDF 失败" }); return }
+            var mode = probe.mode
+            if (mode === "scan-nokey") { onState({ type: "error", message: "这是扫描版 PDF（无文字层），需要先配置智谱视觉 Key（设置 → 视图模式）。" }); return }
+            var pages = probe.pages || []
+            onState({ type: "start", total: pages.length, mode: mode })
+            for (var i = 0; i < pages.length; i++) {
+              if (cancelled) return
+              var pg = pages[i]
+              onState({ type: "progress", done: i, total: pages.length })
+              var original = ""
+              if (mode === "scan") {
+                onState({ type: "pageState", page: pg.page, state: "ocr" })
+                var ocr = await callHost("seeImage", { image: pg.image, prompt: "请原样、完整地识别这张数据手册页面里的所有英文与数字，不要翻译、不要遗漏、保持段落顺序。" })
+                original = ocr.ok ? ocr.text : "[OCR失败] " + (ocr.error || "")
+              } else {
+                original = pg.text || ""
+              }
+              onState({ type: "pageState", page: pg.page, state: "translating" })
+              var tr = await callHost("translateText", { text: original })
+              onState({ type: "page", page: pg.page, original: original, translated: tr.ok ? tr.text : "[翻译失败] " + (tr.error || "") })
+            }
+            onState({ type: "done", mode: mode, total: pages.length })
+          } else {
+            var probe2 = await callHost("officeProbe", { file: dataUrl, filename: filename })
+            if (!probe2.ok) { onState({ type: "error", message: probe2.error || "解析文档失败" }); return }
+            var chunks = probe2.chunks || []
+            onState({ type: "start", total: chunks.length, mode: "office" })
+            for (var j = 0; j < chunks.length; j++) {
+              if (cancelled) return
+              var ck = chunks[j]
+              onState({ type: "progress", done: j, total: chunks.length })
+              var tr2 = await callHost("translateText", { text: ck.text })
+              onState({ type: "chunk", key: ck.key, original: ck.text, translated: tr2.ok ? tr2.text : "[翻译失败] " + (tr2.error || "") })
+            }
+            onState({ type: "done", mode: "office", total: chunks.length })
+          }
+        } catch (e) {
+          onState({ type: "error", message: String((e && e.message) || e) })
+        }
+      })()
+      return ctl
+    }
+
+    // 聊天框/任意位置拖入 PDF 或 Office 文档时弹出的实时翻译面板（纯 DOM 实现，不依赖 ReactDOM）
+    function showDocTranslateModal() {
+      var mask = document.createElement("div")
+      mask.className = "dsh-modal-mask"
+      mask.innerHTML =
+        '<div class="dsh-modal">' +
+        '<div class="dsh-modal-head"><span id="dsh-tt-title">文档实时翻译</span><button class="dsh-modal-close" title="关闭">✕</button></div>' +
+        '<div class="dsh-modal-body" id="dsh-tt-body"><div class="dsh-muted">准备中…</div></div>' +
+        '</div>'
+      document.body.appendChild(mask)
+      var ctl = null
+      var body = mask.querySelector("#dsh-tt-body")
+      var title = mask.querySelector("#dsh-tt-title")
+      function close() {
+        if (ctl) ctl.cancel()
+        if (mask.parentNode) mask.parentNode.removeChild(mask)
+      }
+      mask.querySelector(".dsh-modal-close").onclick = close
+      mask.onclick = function (e) { if (e.target === mask) close() }
+      function card(kind, pageOrIdx, original, translated, state) {
+        var cardEl = document.createElement("div")
+        cardEl.className = "dsh-card"
+        var label = kind === "pdf" ? ("第 " + pageOrIdx + " 页") : ("第 " + pageOrIdx + " 段")
+        var inner
+        if (state === "ocr") inner = '<div class="dsh-muted">识别中…</div>'
+        else if (state === "translating") inner = '<div class="dsh-muted">翻译中…</div>'
+        else inner =
+          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">' +
+          '<div><div class="dsh-muted" style="margin-bottom:4px">原文</div><div class="dsh-muted" style="white-space:pre-wrap;font-size:12px;line-height:1.7"></div></div>' +
+          '<div><div class="dsh-muted" style="margin-bottom:4px">译文</div><div style="white-space:pre-wrap;font-size:13px;line-height:1.8"></div></div>' +
+          '</div>'
+        cardEl.innerHTML = '<div class="dsh-h2" style="margin-bottom:8px">' + label + '</div>' + inner
+        if (state === "done") {
+          var cols = cardEl.querySelectorAll("div[style*='pre-wrap']")
+          if (cols.length >= 2) { cols[0].textContent = original; cols[1].textContent = translated }
+        }
+        return cardEl
+      }
+      var openFile = function (kind, dataUrl, name) {
+        title.textContent = (kind === "pdf" ? "📄 PDF 实时翻译：" : "📄 文档实时翻译：") + name
+        body.innerHTML = '<div class="dsh-muted" id="dsh-tt-prog">正在解析…</div>'
+        var byKey = {}
+        startRealTimeTranslate(kind, dataUrl, name, function (ev) {
+          if (ev.type === "start") {
+            var p = body.querySelector("#dsh-tt-prog")
+            if (p) p.textContent = "实时翻译中：0 / " + ev.total + (kind === "pdf" ? " 页…" : " 段…")
+          } else if (ev.type === "progress") {
+            var p2 = body.querySelector("#dsh-tt-prog")
+            if (p2) p2.textContent = "实时翻译中：" + ev.done + " / " + ev.total + (kind === "pdf" ? " 页…" : " 段…")
+            if (ev.done === 0 && ev.total > 1) {
+              var h = body.querySelector(".dsh-h2")
+              if (!h) { var c = card(kind, 1, "", "", "translating"); body.appendChild(c) }
+            }
+          } else if (ev.type === "pageState" || ev.type === "page") {
+            var key = ev.type === "page" ? ("p" + ev.page) : ("p" + ev.page)
+            var existing = byKey[key]
+            if (!existing) {
+              existing = card(kind, ev.page, "", "", ev.type === "page" ? "done" : ev.state)
+              byKey[key] = existing
+              body.appendChild(existing)
+            }
+            if (ev.type === "page") {
+              var cols = existing.querySelectorAll("div[style*='pre-wrap']")
+              if (cols.length >= 2) { cols[0].textContent = ev.original; cols[1].textContent = ev.translated }
+            }
+          } else if (ev.type === "chunk") {
+            var ck = card(kind, Object.keys(byKey).length + 1, ev.original, ev.translated, "done")
+            byKey["c" + ev.key] = ck
+            body.appendChild(ck)
+          } else if (ev.type === "done") {
+            var p3 = body.querySelector("#dsh-tt-prog")
+            if (p3) { p3.className = "dsh-ok"; p3.textContent = "完成 ✓ 共 " + ev.total + (kind === "pdf" ? " 页" : " 段") + "（可关闭后到「设置 → " + (kind === "pdf" ? "PDF 翻译" : "Office 翻译") + "」重新打开/保存）" }
+          } else if (ev.type === "error") {
+            var p4 = body.querySelector("#dsh-tt-prog")
+            if (p4) { p4.className = "dsh-err"; p4.textContent = ev.message }
+          }
+        })
+      }
+      return { openFile: openFile, close: close }
+    }
+
     function OfficeSection() {
-      var s = React.useState(""); var status = s[0]; var setStatus = s[1]
       var ch = React.useState(null); var chunks = ch[0]; var setChunks = ch[1]
       var fb = React.useState(""); var fileB64 = fb[0]; var setFileB64 = fb[1]
       var fn = React.useState(""); var fileName = fn[0]; var setFileName = fn[1]
-      var rb = React.useState(""); var resultB64 = rb[0]; var setResultB64 = rb[1]
-      var rn = React.useState(""); var resultName = rn[0]; var setResultName = rn[1]
       var b = React.useState(false); var busy = b[0]; var setBusy = b[1]
       var m = React.useState(""); var msg = m[0]; var setMsg = m[1]
+      var pr = React.useState(null); var prog = pr[0]; var setProg = pr[1]
+      var dr = React.useState(false); var over = dr[0]; var setOver = dr[1]
 
       function onFile(e) {
         var f = e.target.files && e.target.files[0]
         if (!f) return
+        translateFile(f)
+        if (e.target) e.target.value = ""
+      }
+      function onDrop(e) {
+        setOver(false)
+        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) translateFile(e.dataTransfer.files[0])
+      }
+      function translateFile(f) {
         var ext = (f.name.toLowerCase().match(/\.(docx|xlsx|pptx)$/) || [])[1]
         if (!ext) { setMsg("只支持 .docx / .xlsx / .pptx（WPS 请另存为这些格式）"); return }
-        setFileName(f.name); setChunks(null); setResultB64(""); setMsg("")
+        setFileName(f.name); setFileB64(""); setChunks([]); setProg(null); setMsg(""); setBusy(true)
         var rd = new FileReader()
         rd.onload = function () {
-          setFileB64(rd.result); setBusy(true); setStatus("translating"); setMsg("正在翻译全文，请稍候…")
-          callHost("translateOffice", { file: rd.result, filename: f.name }).then(function (res) {
-            setBusy(false)
-            if (res && res.ok) { setChunks(res.chunks); setResultB64(res.resultBase64); setResultName(res.outFilename); setStatus("done"); setMsg("翻译完成 ✓ 共 " + res.chunks.length + " 段，可逐段修改后再保存。") }
-            else { setStatus("error"); setMsg((res && res.error) || "翻译失败") }
-          }).catch(function (err) { setBusy(false); setStatus("error"); setMsg(String((err && err.message) || err)) })
+          var list = []
+          setFileB64(rd.result)
+          startRealTimeTranslate("office", rd.result, f.name, function (ev) {
+            if (ev.type === "start") { setProg({ done: 0, total: ev.total }) }
+            else if (ev.type === "progress") { setProg({ done: ev.done, total: ev.total }) }
+            else if (ev.type === "chunk") {
+              list.push({ key: ev.key, original: ev.original, translated: ev.translated })
+              setChunks(list.slice())
+            }
+            else if (ev.type === "done") { setBusy(false); setMsg("翻译完成 ✓ 共 " + ev.total + " 段（逐段实时显示），可逐段修改后点「保存译文文件」。") }
+            else if (ev.type === "error") { setBusy(false); setMsg(ev.message) }
+          })
         }
         rd.readAsDataURL(f)
       }
       function edit(idx, val) {
         var next = chunks.slice()
-        next[idx] = { key: next[idx].key, original: next[idx].original, translated: val }
+        next[idx] = { key: next[idx].key, original: next[idx].original, translated: val, _edited: true }
         setChunks(next)
       }
       function save() {
-        if (!resultB64 && !chunks) return
-        if (resultB64 && !chunks.some(function (c) { return c._edited })) { downloadBase64(resultB64, resultName); return }
-        // 用户改过 → 重新回填
+        if (!chunks || chunks.length === 0) return
         setBusy(true); setMsg("正在生成译文文件…")
         callHost("saveOffice", { file: fileB64, filename: fileName, chunks: chunks }).then(function (res) {
           setBusy(false)
@@ -360,11 +552,13 @@ window.__ModuleLoader__.load({
       return el("div", { className: "dsh-page" },
         el("div", { className: "dsh-head" }, el("h2", { className: "dsh-h2" }, "Office 翻译")),
         el("div", { className: "dsh-card" },
-          el("div", { className: "dsh-muted", style: { marginBottom: "10px" } }, "上传 Word（.docx）/ Excel（.xlsx）/ PPT（.pptx）文档，全文翻译成中文；可逐段修改译文，确认后下载译文文件。WPS 请先另存为 .docx/.xlsx/.pptx。"),
-          el("input", { type: "file", accept: ".docx,.xlsx,.pptx", onChange: onFile, disabled: busy, className: "dsh-input" }),
-          busy ? el("div", { className: "dsh-muted", style: { marginTop: "10px" } }, "翻译中，请耐心等待…") : null,
+          el("div", { className: "dsh-muted", style: { marginBottom: "10px" } }, "把 Word（.docx）/ Excel（.xlsx）/ PPT（.pptx）拖进来或点下面区域选择文件，逐段实时翻译成中文，边翻边显示；可逐段修改译文，确认后下载译文文件。WPS 请先另存为 .docx/.xlsx/.pptx。"),
+          el("div", { className: "dsh-dropzone" + (over ? " dsh-over" : ""), onClick: function () { var inp = document.getElementById("dsh-office-file"); if (inp) inp.click() }, onDragOver: function (e) { e.preventDefault(); setOver(true) }, onDragLeave: function () { setOver(false) }, onDrop: onDrop },
+            el("div", {}, "📄 把 Word / Excel / PPT 拖到这里，或点此选择文件")),
+          el("input", { id: "dsh-office-file", type: "file", accept: ".docx,.xlsx,.pptx", onChange: onFile, disabled: busy, style: { display: "none" } }),
+          prog ? el("div", { className: "dsh-muted", style: { marginTop: "10px" } }, "实时翻译中：" + prog.done + " / " + prog.total + " 段…") : null,
           msg ? el("div", { className: msg.indexOf("完成") !== -1 || msg.indexOf("已生成") !== -1 ? "dsh-ok" : "dsh-err", style: { marginTop: "10px" } }, msg) : null,
-          chunks ? el("div", { style: { marginTop: "12px" } }, el("button", { className: "dsh-btn", onClick: save, disabled: busy }, "💾 保存译文文件")) : null),
+          chunks && chunks.length ? el("div", { style: { marginTop: "12px" } }, el("button", { className: "dsh-btn", onClick: save, disabled: busy }, "💾 保存译文文件")) : null),
         chunks && chunks.length ? chunks.map(function (c, idx) {
           return el("div", { className: "dsh-card", key: idx, style: { marginTop: "10px" } },
             el("div", { className: "dsh-muted", style: { marginBottom: "6px", whiteSpace: "pre-wrap", fontSize: "12px" } }, "原文：" + c.original),
@@ -496,7 +690,7 @@ window.__ModuleLoader__.load({
       React.useEffect(function () { load() }, [])
 
       function save() {
-        if (!key.trim()) { setMsg("请先粘贴你的智谱 API Key（以 sk- 开头）"); return }
+        if (!key.trim()) { setMsg("请先粘贴你的智谱 API Key（不以 sk- 开头，直接粘贴官网复制的完整 Key）"); return }
         setBusy(true); setMsg("")
         callHost("setVisionKey", { key: key.trim() }).then(function (res) {
           setBusy(false)
@@ -543,11 +737,11 @@ window.__ModuleLoader__.load({
 
         el("div", { className: "dsh-card" },
           el("div", { className: "dsh-h2", style: { marginBottom: "10px" } }, "📖 新手教程：怎么开启识图"),
-          el("div", { className: "dsh-muted" }, "视图模式让 DeepSeek「看懂」图片：把图片发给免费的智谱 GLM-4V-Flash 识别，识别出的文字 / 内容再喂给 DeepSeek 一起回答。"),
+          el("div", { className: "dsh-muted" }, "视图模式让 DeepSeek「看懂」图片：把图片发给免费的智谱视觉模型（GLM-4.6V-Flash）识别，识别出的文字 / 内容再喂给 DeepSeek 一起回答。"),
           el("ol", { style: { margin: "10px 0 0", paddingLeft: "20px", lineHeight: "1.9", fontSize: "13px", opacity: ".85" } },
             el("li", {}, "点下面「去智谱官网申请免费 Key」按钮（会在浏览器打开官网）。"),
             el("li", {}, "用手机号注册 / 登录智谱开放平台（open.bigmodel.cn）。"),
-            el("li", {}, "点页面右上角「API 密钥」→「创建 API Key」→ 复制那串以 sk- 开头的 Key。（免费模型，无需充值）"),
+            el("li", {}, "点页面右上角「API 密钥」→「创建 API Key」→ 复制那串 Key（不以 sk- 开头，直接全部复制即可）。（免费模型，无需充值）"),
             el("li", {}, "把 Key 粘贴到下面输入框 → 点「保存 Key」→ 再点「测试连接」。"),
             el("li", {}, "看到「连接成功」后，下面的识图区就能用了。")),
           el("div", { className: "dsh-note", style: { marginTop: "10px" } }, "· 隐私：Key 只保存在你自己电脑上，不上传、不开源。")),
@@ -555,7 +749,7 @@ window.__ModuleLoader__.load({
         el("div", { className: "dsh-card" },
           el("div", { className: "dsh-h2", style: { marginBottom: "10px" } }, "🔑 配置智谱 Key"),
           el("div", { style: { display: "flex", gap: "8px" } },
-            el("input", { value: key, onChange: function (e) { setKey(e.target.value) }, placeholder: "粘贴以 sk- 开头的智谱 API Key", className: "dsh-input", style: { flex: 1 } }),
+            el("input", { value: key, onChange: function (e) { setKey(e.target.value) }, placeholder: "粘贴智谱 API Key（不以 sk- 开头）", className: "dsh-input", style: { flex: 1 } }),
             el("button", { className: "dsh-btn", onClick: save, disabled: busy }, "保存 Key")),
           el("div", { style: { display: "flex", gap: "8px", marginTop: "10px", flexWrap: "wrap" } },
             el("button", { className: "dsh-btn ghost", onClick: goto }, "🌐 去智谱官网申请免费 Key"),
@@ -590,7 +784,7 @@ window.__ModuleLoader__.load({
       React.useEffect(function () { load() }, [])
       function toggle() { var next = !isOpen; setOpen(next); if (next) load() }
       function save() {
-        if (!key.trim()) { setMsg("请先粘贴智谱 API Key（sk- 开头）"); return }
+        if (!key.trim()) { setMsg("请先粘贴智谱 API Key（不以 sk- 开头）"); return }
         setBusy(true)
         callHost("setVisionKey", { key: key.trim() }).then(function (res) {
           setBusy(false)
@@ -627,10 +821,10 @@ window.__ModuleLoader__.load({
         el("button", { className: "dsh-vision-btn", onClick: toggle, title: cfg ? "识图（已启用）" : "识图（未配置）" }, "🖼 识图", cfg ? el("span", { className: "dsh-vision-dot" }) : null),
         isOpen ? el("div", { className: "dsh-vision-pop" },
           el("div", { className: "dsh-h2", style: { marginBottom: "8px" } }, "识图（视图模式）", el("span", { className: cfg ? "dsh-ok" : "dsh-muted", style: { marginLeft: "8px", fontSize: "12px" } }, cfg ? "已启用" : "未启用")),
-          cfg ? null : el("div", { className: "dsh-muted", style: { marginBottom: "8px" } }, "识别图片需要免费的智谱 GLM-4V-Flash 模型，请先领 Key："),
+          cfg ? null : el("div", { className: "dsh-muted", style: { marginBottom: "8px" } }, "识别图片需要免费的智谱视觉模型（GLM-4.6V-Flash），请先领 Key："),
           cfg ? null : el("button", { className: "dsh-btn ghost", onClick: goto, style: { marginBottom: "8px" } }, "🌐 去智谱官网申请免费 Key"),
           el("div", { style: { display: "flex", gap: "6px", marginBottom: "8px" } },
-            el("input", { value: key, onChange: function (e) { setKey(e.target.value) }, placeholder: "粘贴 sk- 开头的 Key", className: "dsh-input", style: { flex: 1 } }),
+            el("input", { value: key, onChange: function (e) { setKey(e.target.value) }, placeholder: "粘贴智谱 API Key（不以 sk- 开头）", className: "dsh-input", style: { flex: 1 } }),
             el("button", { className: "dsh-btn", onClick: save, disabled: busy }, "保存"),
             el("button", { className: "dsh-btn ghost", onClick: test, disabled: busy }, "测试")),
           el("div", { className: "dsh-muted", style: { fontSize: "12px", marginBottom: "8px" } }, "图片 → 识别 → 结果可复制到对话框。"),
@@ -693,6 +887,29 @@ window.__ModuleLoader__.load({
           function () { return React.createElement(VisionInputButton) }
         )
       })
+
+      // 全局拖拽：把 PDF / Word / Excel / PPT 拖到窗口任意位置（包括聊天框）→ 打开实时翻译面板。
+      // 图片等其它文件交给系统原有处理；原生文件输入框里的拖放也交给它自己。
+      var docModal = null
+      if (typeof document !== "undefined") {
+        document.addEventListener("dragover", function (e) {
+          if (e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.indexOf("Files") !== -1) { e.preventDefault(); e.stopPropagation() }
+        })
+        document.addEventListener("drop", function (e) {
+          var files = e.dataTransfer && e.dataTransfer.files
+          if (!files || files.length === 0) return
+          var f = files[0]
+          var ext = (f.name || "").toLowerCase().match(/\.(pdf|docx|xlsx|pptx)$/)
+          var onFileInput = e.target && e.target.tagName === "INPUT" && e.target.type === "file"
+          if (onFileInput) return
+          if (!ext) return
+          e.preventDefault(); e.stopPropagation()
+          if (!docModal) docModal = showDocTranslateModal()
+          var rd = new FileReader()
+          rd.onload = function () { docModal.openFile(ext[1] === "pdf" ? "pdf" : "office", rd.result, f.name) }
+          rd.readAsDataURL(f)
+        })
+      }
     }
 
     exports.apply = apply
