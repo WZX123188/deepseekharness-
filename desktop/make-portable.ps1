@@ -1,4 +1,4 @@
-# 从 release\win-unpacked 生成便携版（绿色 zip）：解压即用，数据随程序目录 data\ 走。
+﻿# 从 release\win-unpacked 生成便携版（绿色 zip）：解压即用，数据随程序目录 data\ 走。
 # 用 robocopy + 7z，避免 PowerShell Copy-Item/Compress-Archive 在 node_modules 长路径上失败。
 $ErrorActionPreference = 'Stop'
 $version = (Get-Content (Join-Path $PSScriptRoot 'package.json') -Raw -Encoding UTF8 | ConvertFrom-Json).version

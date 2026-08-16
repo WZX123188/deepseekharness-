@@ -22,6 +22,26 @@ desktop/node/
 # 敏感：凭证 / 设置 / 本地状态（绝不能提交到仓库）
 .credentials.yaml
 settings.yaml
+
+# 运行中的便携实例数据（会话/缓存，不入库）
+desktop/dsh/data/
+desktop/dsh/portable.dat
+
+# 便携运行实例整目录（desktop/dsh：数据+内置运行时+资源，均不入库；源码在 desktop/gate、desktop/plugin-static 等）
+desktop/dsh/
+
+# 测试环境运行时数据（脚本保留，home 数据不入库）
+test-env/home/
+test-env/t*-out.log
+test-env/t*-err.log
+test-env/v*-out.log
+test-env/v*-err.log
+
+# 备份目录（含会话记录，敏感，不入库）
+BACKUP/
+watchdog.log
+restart-test.log
+
 dsh-client-*.json
 dsh-market.json
 .env

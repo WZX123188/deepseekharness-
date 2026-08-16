@@ -1,7 +1,7 @@
 // DSH 客户端权限门（正式插件包，ESM）
 // 规则：读取放行；写新文件/我的文件/G盘文件放行；改删已存在且非我的文件需勾选同意；
 //       pwsh/bash 含删除/写入信号需同意。询问时写标记文件，供 Electron 置顶。
-import { writeFileSync, unlinkSync } from 'node:fs'
+import { writeFileSync, unlinkSync, readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 
 const SHELL_MUTATION = new RegExp(
@@ -11,6 +11,29 @@ const SHELL_MUTATION = new RegExp(
   '>>|>|\\|\\s*Out-File|curl\\s+[^\\r\\n]*-o|wget\\s+[^\\r\\n]*-O',
   'i'
 )
+
+// 读取用户配置的权限模式：dsh-client-config.json 的 permissionMode
+// trust = 完全信任（设置里选了「完全放开」）→ 所有操作放行；ask = 敏感操作询问。
+function loadPermissionMode() {
+  try {
+    const home = process.env.DSH_HOME
+    if (!home) return 'ask'
+    const cfgPath = join(home, 'dsh-client-config.json')
+    if (!existsSync(cfgPath)) return 'ask'
+    const cfg = JSON.parse(readFileSync(cfgPath, 'utf8'))
+    return cfg && cfg.permissionMode === 'trust' ? 'trust' : 'ask'
+  } catch (e) { return 'ask' }
+}
+
+// 审批策略为 never（用户设置了「不审批」）时，userQuestions 弹窗无法弹出，
+// 此时不应把写操作堵死——判定为放行场景。
+function isApprovalNever(approval, exec) {
+  try {
+    if (!approval || typeof approval.effectivePolicy !== 'function') return false
+    const session = exec && exec.agent && exec.agent.session
+    return approval.effectivePolicy(session) === 'never'
+  } catch (e) { return false }
+}
 
 function describeOperation(name, args) {
   if (name === 'write') {
@@ -53,7 +76,7 @@ function setMarker(pending) {
 }
 
 async function askForConsent(userQuestions, exec, path, mine, signal) {
-  if (userQuestions === undefined) return false
+  if (userQuestions === undefined) return true // 弹窗链路不可用 → 放行（fail-open，避免写操作死锁）
   if (signal) signal(true)
   try {
     const answer = await userQuestions.ask({
@@ -74,6 +97,8 @@ async function askForConsent(userQuestions, exec, path, mine, signal) {
       })
     if (approved && path !== null && mine !== undefined) mine.add(path)
     return approved
+  } catch (error) {
+    return true // 询问异常 → 放行，避免弹窗故障把操作堵死
   } finally {
     if (signal) signal(false)
   }
@@ -82,11 +107,15 @@ async function askForConsent(userQuestions, exec, path, mine, signal) {
 export function apply(ctx) {
   const userQuestions = ctx.get('userQuestions')
   const fs = ctx.get('fs')
+  const approval = ctx.get('approval')
   const mine = new Set()
   const signal = setMarker
 
   ctx.on('tools/pre-execute', async (exec, next) => {
     try {
+      // 完全信任模式（设置里选了「完全放开」）或审批策略为 never（弹窗禁用）→ 全部放行
+      if (loadPermissionMode() === 'trust' || isApprovalNever(approval, exec)) return next()
+
       const name = exec && exec.name
       const args = (exec && exec.arguments) || {}
 

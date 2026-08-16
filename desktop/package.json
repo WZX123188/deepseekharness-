@@ -1,6 +1,6 @@
 {
   "name": "dsh-client-desktop",
-  "version": "3.0.1",
+  "version": "4.0.0",
   "description": "DSH 客户端桌面版（Electron）：内部拉起 dsh web，弹窗置顶提醒",
   "main": "main.js",
   "scripts": {
@@ -21,6 +21,8 @@
     },
     "files": [
       "**/*",
+      "!release/**",
+      "!dsh/**",
       "!node/**",
       "!dsh-runtime/**",
       "!**/*.log"

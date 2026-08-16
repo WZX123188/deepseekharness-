@@ -1,8 +1,9 @@
-// 手写 typert host 清单：参数/返回值用 strict 编解码 + z.unknown() 宽松 schema，
-// 既通过 typert-loader 的 strict 校验，又对任意 JSON 放行（免编译器）。
-import { z } from 'zod'
+// 手写 typert host 清单：参数/返回值用 strict 编解码 + 宽松 schema（伪 zod：带 _zod 标志 + parse 透传），
+// 既通过 typert-loader / registry 的 strict 校验，又对任意 JSON 放行（免编译器、免 zod 依赖）。
+// 2026-08-17：去掉 `import { z } from 'zod'`（plugin-static 不在 zod 解析链上，导致清单从未注册、RPC 全 404）。
 
-const LOOSE = { mode: 'strict', typeSymbol: 'json', schema: z.unknown() }
+const LOOSE_SCHEMA = { _zod: true, parse: (v) => v }
+const LOOSE = { mode: 'strict', typeSymbol: 'json', schema: LOOSE_SCHEMA }
 const NS = 'dshClientFeatures'
 const PKG = 'dsh-client-static'
 
@@ -44,5 +45,24 @@ export const TYPERT = {
     direct('listProjects'),
     direct('createProject', [argsParam()]),
     direct('openFeedback', [argsParam()]),
+    // 视图/识图（v3.0.1 起就有，但漏注册导致一直 404 —— 2026-08-17 补全）
+    direct('getVisionStatus'),
+    direct('setVisionKey', [argsParam()]),
+    direct('clearVisionKey'),
+    direct('testVision'),
+    direct('seeImage', [argsParam()]),
+    direct('openVisionSite'),
+    // 翻译（文字/PDF/Office/保存）
+    direct('translateText', [argsParam()]),
+    direct('translatePdf', [argsParam()]),
+    direct('translateOffice', [argsParam()]),
+    direct('saveOffice', [argsParam()]),
+    // 壁纸
+    direct('getWallpaper'),
+    direct('setWallpaper', [argsParam()]),
+    // v3.0.2 聊天附件解析
+    direct('parseAttachment', [argsParam()]),
+    // v3.0.3 聊天附件本地缓存（返回本地路径供 agent 读取）
+    direct('cacheAttachment', [argsParam()]),
   ],
 }

@@ -3,8 +3,11 @@
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from 'node:fs'
+import { createServer } from 'node:http'
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { TYPERT } from './typert.host.js'
 
 // 本插件所在目录（用于定位 office.mjs 辅助脚本）
 const PLUGIN_DIR = path.dirname(fileURLToPath(import.meta.url))
@@ -19,9 +22,12 @@ const USAGE_PATH = path.join(HOME, 'dsh-client-usage.json')
 const MCP_DIR = path.join(HOME, 'mcp-tools')                       // 市场工具隔离安装目录（不碰全局 npm）
 const PROFILE_PATCH = path.join(HOME, 'profiles', 'web', 'cordis.patch.yml')
 
-// 视图模式：智谱 GLM-4V-Flash（免费国产视觉模型，OpenAI 兼容接口）
+// 视图模式：智谱 GLM 视觉模型（免费国产视觉模型，OpenAI 兼容接口）
 const VISION_URL = 'https://open.bigmodel.cn/api/paas/v4/chat/completions'
-const VISION_MODEL = 'glm-4v-flash'
+// 优先 glm-4.6v-flash，失败自动回退 glm-4v-flash（模型名随时可能调整）
+const VISION_MODELS = ['glm-4.6v-flash', 'glm-4v-flash']
+const VISION_MODEL = VISION_MODELS[0]
+// 直接打开智谱开放平台首页（v3.0.3：/usercenter/apikeys 在部分环境 404，首页可进，用户从控制台找 API 入口）
 const VISION_SITE = 'https://open.bigmodel.cn/'
 
 const BALANCE_URL = 'https://api.deepseek.com/user/balance'
@@ -386,37 +392,47 @@ export class DshClientFeaturesService extends TypertRemoteService {
     return { ok: true, configured: false }
   }
 
+  // 带模型回退的智谱视觉调用：依次尝试 VISION_MODELS，返回 { ok, model, text, error }
+  async visionChat(content) {
+    if (!visionKey) return { ok: false, error: '未配置智谱视觉 API Key：请先在「视图模式」页点「去官网申请」领免费 Key 并保存。' }
+    let lastError = ''
+    for (const model of VISION_MODELS) {
+      try {
+        const res = await fetch(VISION_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + visionKey }, body: JSON.stringify({ model: model, messages: [{ role: 'user', content: content }] }) })
+        const text = await res.text()
+        if (res.status === 200) {
+          let out = ''
+          try { const b = JSON.parse(text); out = (b.choices && b.choices[0] && b.choices[0].message && b.choices[0].message.content) || '' } catch (e) {}
+          if (typeof out !== 'string') out = JSON.stringify(out)
+          return { ok: true, model: model, text: out }
+        }
+        let msg = 'HTTP ' + res.status
+        try { const b = JSON.parse(text); if (b && b.error && b.error.message) msg = String(b.error.message) } catch (e) {}
+        lastError = model + ': ' + msg
+        // 401/403 = 密钥问题，换模型也没用，直接返回
+        if (res.status === 401 || res.status === 403) return { ok: false, error: msg }
+      } catch (e) { lastError = model + ': ' + String((e && e.message) || e) }
+    }
+    return { ok: false, error: lastError || '所有视觉模型均连接失败' }
+  }
+
   async testVision() {
     try {
       if (!visionKey) return { ok: false, error: '请先填写并保存智谱 API Key' }
-      const res = await fetch(VISION_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + visionKey }, body: JSON.stringify({ model: VISION_MODEL, messages: [{ role: 'user', content: 'ping' }] }) })
-      const text = await res.text()
-      if (res.status !== 200) {
-        let msg = '连接失败（HTTP ' + res.status + '）'
-        try { const b = JSON.parse(text); if (b && b.error && b.error.message) msg = String(b.error.message) } catch (e) {}
-        return { ok: false, error: msg }
-      }
-      return { ok: true }
+      const r = await this.visionChat([{ type: 'text', text: 'ping' }])
+      if (r.ok) return { ok: true, model: r.model }
+      return { ok: false, error: r.error }
     } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
   }
 
   async seeImage(args) {
     try {
-      if (!visionKey) return { ok: false, error: '未配置智谱视觉 API Key：请先在「视图模式」页点「去官网申请」领免费 Key 并保存。' }
       const image = args && args.image
       if (typeof image !== 'string' || image === '') return { ok: false, error: '没有图片数据' }
       const prompt = (args && args.prompt) || '请详细、准确地描述这张图片里的全部内容，包括文字、数字、图表和结构。'
-      const res = await fetch(VISION_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + visionKey }, body: JSON.stringify({ model: VISION_MODEL, messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: image } }, { type: 'text', text: prompt }] }] }) })
-      const text = await res.text()
-      if (res.status !== 200) {
-        let msg = '识别失败（HTTP ' + res.status + '）'
-        try { const b = JSON.parse(text); if (b && b.error && b.error.message) msg = String(b.error.message) } catch (e) {}
-        return { ok: false, error: msg }
-      }
-      let content = ''
-      try { const b = JSON.parse(text); content = (b.choices && b.choices[0] && b.choices[0].message && b.choices[0].message.content) || '' } catch (e) {}
-      if (typeof content !== 'string') content = JSON.stringify(content)
-      return { ok: true, text: content, model: VISION_MODEL }
+      const r = await this.visionChat([{ type: 'image_url', image_url: { url: image } }, { type: 'text', text: prompt }])
+      if (r.ok) return { ok: true, text: r.text, model: r.model }
+      return { ok: false, error: r.error }
     } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
   }
 
@@ -424,6 +440,60 @@ export class DshClientFeaturesService extends TypertRemoteService {
     try {
       await this.runCmd(['start', '', VISION_SITE], 8000)
       return { ok: true }
+    } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
+  }
+
+  // 聊天附件解析：docx/xlsx/pptx/pdf/txt 等 → 提取文本，供前端附加到消息里随问题一起发送
+  async parseAttachment(args) {
+    try {
+      const b64 = args && args.file
+      const filename = (args && args.filename) || 'file'
+      if (typeof b64 !== 'string' || b64 === '') return { ok: false, error: '没有文件数据' }
+      const raw = String(b64).replace(/^data:[^;]*;base64,/, '')
+      const ext = (path.extname(filename) || '').toLowerCase()
+      const tmp = path.join(os.tmpdir(), 'dsh-att-' + Date.now() + '-' + Math.floor(Math.random() * 1e6) + ext)
+      writeFileSync(tmp, Buffer.from(raw, 'base64'))
+      try {
+        if (ext === '.docx' || ext === '.xlsx' || ext === '.pptx') {
+          const jz = JSZIP_ENTRY()
+          const out = await this.runNodeFile(OFFICE_MJS, ['extract', tmp, jz], {}, 120000)
+          const parsed = JSON.parse((out.stdout || '').trim().split(/\r?\n/).filter(Boolean).pop() || '{"chunks":[]}')
+          const chunks = parsed.chunks || []
+          const text = chunks.map((c) => c.text).join('\n')
+          if (!text.trim()) return { ok: false, error: '未能从文档中提取到文本（可能是纯图片或空文档）' }
+          return { ok: true, type: parsed.type || 'office', name: filename, text: text, chars: text.length }
+        }
+        if (ext === '.pdf') {
+          const out = await this.runNode(extractPdfScript(), { DSH_F: tmp }, 120000)
+          const pages = (JSON.parse((out.stdout || '').trim().split(/\r?\n/).filter(Boolean).pop() || '{"pages":[]}')).pages || []
+          const text = pages.map((p) => p.text).join('\n')
+          if (!text.trim()) return { ok: false, error: 'PDF 没有文字层（扫描版 PDF 请用「PDF 翻译」页的扫描识别功能）' }
+          return { ok: true, type: 'pdf', name: filename, text: text, chars: text.length }
+        }
+        if (ext === '.txt' || ext === '.md' || ext === '.csv' || ext === '.json' || ext === '.log' || ext === '.js' || ext === '.ts' || ext === '.py' || ext === '.html' || ext === '.xml') {
+          const text = readFileSync(tmp, 'utf8')
+          return { ok: true, type: 'text', name: filename, text: text, chars: text.length }
+        }
+        return { ok: false, error: '暂不支持的文件类型：' + (ext || '未知') + '（支持 docx/xlsx/pptx/pdf/txt/csv/json 等；图片请直接拖入）' }
+      } finally {
+        try { unlinkSync(tmp) } catch (e) {}
+      }
+    } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
+  }
+
+  // 聊天附件缓存：把拖入的文档存到本机（$DSH_HOME/attachments），返回本地路径，供 agent 读取
+  async cacheAttachment(args) {
+    try {
+      const b64 = args && args.data
+      const filename = (args && args.filename) || 'file'
+      if (typeof b64 !== 'string' || b64 === '') return { ok: false, error: '没有文件数据' }
+      const raw = String(b64).replace(/^data:[^;]*;base64,/, '')
+      const dir = path.join(HOME, 'attachments')
+      mkdirSync(dir, { recursive: true })
+      const safe = path.basename(filename).replace(/[\\/:*?"<>|]/g, '_')
+      const dest = path.join(dir, Date.now() + '-' + Math.floor(Math.random() * 1e6) + '_' + safe)
+      writeFileSync(dest, Buffer.from(raw, 'base64'))
+      return { ok: true, path: dest, name: filename }
     } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
   }
 
@@ -595,9 +665,69 @@ export class DshClientFeaturesService extends TypertRemoteService {
   }
 }
 
+// 本地 RPC HTTP 服务：client 端直接 fetch 本服务，绕开 typert/gateway 的注册问题。
+// 端口按实例隔离：默认 3192（web 端口 3180 的实例）；测试实例可用 DSH_LOCAL_RPC_PORT 覆盖，避免多实例冲突。
+const LOCAL_RPC_PORT = Number(process.env.DSH_LOCAL_RPC_PORT) || 3192
+function startLocalRpc(svc) {
+  try {
+    const server = createServer((req, res) => {
+      res.setHeader('Access-Control-Allow-Origin', '*')
+      res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+      if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
+      if (req.method !== 'POST') { res.writeHead(405, { 'Content-Type': 'application/json' }); res.end('{"ok":false,"error":"method"}'); return }
+      let body = ''
+      req.on('data', (c) => { body += c; if (body.length > 60e6) req.destroy() })
+      req.on('end', async () => {
+        try {
+          const parsed = JSON.parse(body || '{}')
+          const method = parsed && parsed.method
+          const fn = method && typeof svc[method] === 'function' ? svc[method] : null
+          if (!fn) { res.writeHead(404, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: 'unknown method: ' + method })); return }
+          const result = await fn.call(svc, parsed.args)
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify(result))
+        } catch (e) {
+          res.writeHead(500, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: false, error: String((e && e.message) || e) }))
+        }
+      })
+    })
+    server.listen(LOCAL_RPC_PORT, '127.0.0.1')
+    console.log('[dsh-static] local rpc server: http://127.0.0.1:' + LOCAL_RPC_PORT)
+  } catch (e) { console.error('[dsh-static] local rpc server failed: ' + ((e && e.message) || e)) }
+}
+
+// 自动续跑断点：新会话创建时，若 CURRENT_TASK.md 有未完成任务，注入提示，agent 汇报并等用户确认继续
+const CHECKPOINT_FILE = path.join('G:', 'dsh客户端', 'CURRENT_TASK.md')
+function applyCheckpointInjection(ctx) {
+  try {
+    ctx.on('agent/created', (carrier, ev) => {
+      try {
+        const agent = ev && ev.agent
+        if (!agent || typeof agent.inject !== 'function') return
+        if (!existsSync(CHECKPOINT_FILE)) return
+        const raw = readFileSync(CHECKPOINT_FILE, 'utf8') || ''
+        const text = raw.trim()
+        if (!text) return
+        // 无任务/已完成 状态不注入
+        if (/^#\s*状态[:：]\s*(无任务|已完成)/m.test(text)) return
+        const lines = text.split('\n')
+        const summary = lines.slice(0, 14).join('\n')
+        agent.inject(createUserMessage({
+          content: [{ type: 'text', text: '【自动续跑检查】检测到上次任务断点（' + CHECKPOINT_FILE + '）：\n' + summary + '\n—— 请先向用户汇报断点内容；用户说「继续」时读取完整断点接着完成，否则先询问是否需要继续。' }],
+          source: { kind: 'plugin', plugin: 'dsh-client-static' }
+        }))
+      } catch (e) {}
+    })
+  } catch (e) { console.error('[dsh-static] checkpoint injection failed: ' + String((e && e.message) || e)) }
+}
+
 export function apply(ctx) {
   try {
-    new DshClientFeaturesService(ctx)
+    const svc = new DshClientFeaturesService(ctx)
+    startLocalRpc(svc)
+    applyCheckpointInjection(ctx)
   } catch (e) {
     console.error('[dsh-static] apply FAILED: ' + ((e && e.stack) || e))
   }

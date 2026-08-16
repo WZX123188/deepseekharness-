@@ -21,6 +21,7 @@ window.__ModuleLoader__.load({
       direct("listPlugins"), direct("installPlugin", [argsParam()]), direct("setPluginEnabled", [argsParam()]), direct("uninstallPlugin", [argsParam()]),
       direct("listProjects"), direct("createProject", [argsParam()]), direct("openFeedback", [argsParam()]),
       direct("getVisionStatus"), direct("setVisionKey", [argsParam()]), direct("clearVisionKey"), direct("testVision"), direct("seeImage", [argsParam()]), direct("openVisionSite"),
+      direct("parseAttachment", [argsParam()]),
       direct("translateText", [argsParam()]), direct("translatePdf", [argsParam()]),
       direct("translateOffice", [argsParam()]), direct("saveOffice", [argsParam()]),
       direct("getWallpaper"), direct("setWallpaper", [argsParam()])
@@ -62,14 +63,147 @@ window.__ModuleLoader__.load({
       return React.createElement.apply(null, [tag, props].concat(children))
     }
 
+    // ===== 聊天附件 v3.0.3：图标卡片 + 本地缓存（agent 读本地路径）=====
+    var DOC_RE = /\.(docx|xlsx|pptx|pdf|txt|md|csv|json|log|js|ts|py|html|xml)$/i
+    function appendToComposer(text) {
+      var ta = document.querySelector("[data-composer-seat] textarea")
+      if (!ta) return false
+      var proto = window.HTMLTextAreaElement.prototype
+      var setter = Object.getOwnPropertyDescriptor(proto, "value").set
+      var cur = ta.value
+      var sep = cur && !/\n$/.test(cur) ? "\n" : ""
+      var insert = sep + text + (text.charAt(text.length - 1) === "\n" ? "" : "\n")
+      setter.call(ta, cur + insert)
+      ta.dispatchEvent(new Event("input", { bubbles: true }))
+      ta.focus()
+      return true
+    }
+    // 附件卡片列表（模块级状态，跨组件共享）
+    var attachList = []
+    var attachListeners = []
+    function notifyAttach() { for (var i = 0; i < attachListeners.length; i++) { try { attachListeners[i]() } catch (e) {} } }
+    function iconFor(ext) {
+      ext = (ext || "").toLowerCase()
+      if (ext === "docx" || ext === "doc") return "📄"
+      if (ext === "xlsx" || ext === "xls" || ext === "csv") return "📊"
+      if (ext === "pptx" || ext === "ppt") return "📽"
+      if (ext === "pdf") return "📕"
+      if (ext === "txt" || ext === "md" || ext === "log") return "📃"
+      return "📁"
+    }
+    // 后台缓存：读 base64 → host 存本地 → 注入路径文本到输入框
+    function cacheToHost(item, file) {
+      if (file.size > 100 * 1024 * 1024) { item.status = "error"; item.error = "文件超过 100MB"; notifyAttach(); return }
+      var rd = new FileReader()
+      rd.onload = function () {
+        callHost("cacheAttachment", { filename: item.name, data: rd.result }).then(function (res) {
+          if (res && res.ok) {
+            item.status = "ready"
+            item.path = res.path
+            var txt = "\n【附件】" + item.name + "\n路径：" + res.path + "\n"
+            appendToComposer(txt)
+          } else { item.status = "error"; item.error = (res && res.error) || "缓存失败" }
+          notifyAttach()
+        })
+      }
+      rd.onerror = function () { item.status = "error"; item.error = "读取失败"; notifyAttach() }
+      rd.readAsDataURL(file)
+    }
+    function addAttachments(fileList) {
+      var files = Array.prototype.slice.call(fileList || [])
+      var docs = files.filter(function (f) { return DOC_RE.test(f.name || "") })
+      if (docs.length === 0) return 0
+      docs.forEach(function (f) {
+        var item = {
+          id: "att-" + Date.now() + "-" + Math.random().toString(36).slice(2, 8),
+          name: f.name,
+          ext: (f.name.split(".").pop() || "").toLowerCase(),
+          size: f.size,
+          status: "caching",
+          path: ""
+        }
+        attachList.push(item)
+        notifyAttach()
+        cacheToHost(item, f)
+      })
+      return docs.length
+    }
+    // 移除卡片 + 清理输入框里注入的路径文本
+    function removeAttachment(id) {
+      var idx = -1
+      for (var i = 0; i < attachList.length; i++) if (attachList[i].id === id) { idx = i; break }
+      if (idx < 0) return
+      var item = attachList[idx]
+      attachList.splice(idx, 1)
+      if (item.path) {
+        var ta = document.querySelector("[data-composer-seat] textarea")
+        if (ta) {
+          var marker = "【附件】" + item.name
+          var at = ta.value.indexOf(marker)
+          if (at >= 0) {
+            var end = ta.value.indexOf("\n\n", at)
+            if (end < 0) end = ta.value.length
+            var proto = window.HTMLTextAreaElement.prototype
+            var setter = Object.getOwnPropertyDescriptor(proto, "value").set
+            setter.call(ta, ta.value.slice(0, at) + ta.value.slice(end))
+            ta.dispatchEvent(new Event("input", { bubbles: true }))
+          }
+        }
+      }
+      notifyAttach()
+    }
+    // 附件卡片栏（千问样式：图标 + 标题小字 + 右上角叉叉）——挂在输入区上方
+    function AttachmentBar() {
+      var [, force] = React.useReducer(function (x) { return x + 1 }, 0)
+      React.useEffect(function () {
+        attachListeners.push(force)
+        return function () {
+          var i = attachListeners.indexOf(force)
+          if (i >= 0) attachListeners.splice(i, 1)
+        }
+      }, [])
+      if (attachList.length === 0) return null
+      return el("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap", padding: "4px 0" } },
+        attachList.map(function (a) {
+          return el("div", { key: a.id, style: { position: "relative", display: "flex", flexDirection: "column", alignItems: "center", width: "74px", background: "rgba(127,127,127,.08)", border: "1px solid rgba(127,127,127,.18)", borderRadius: "10px", padding: "10px 6px 6px", boxSizing: "border-box" } },
+            el("div", { style: { fontSize: "26px", lineHeight: "30px" } }, iconFor(a.ext)),
+            el("div", { title: a.name, style: { fontSize: "10px", maxWidth: "66px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", opacity: ".75", marginTop: "4px", lineHeight: "14px" } }, a.name),
+            el("button", {
+              onClick: function () { removeAttachment(a.id) },
+              title: "移除",
+              style: { position: "absolute", top: "2px", right: "2px", width: "16px", height: "16px", lineHeight: "14px", fontSize: "10px", borderRadius: "50%", border: "none", cursor: "pointer", background: "rgba(127,127,127,.28)", color: "inherit", padding: "0" }
+            }, "✕"),
+            a.status === "caching" ? el("div", { style: { fontSize: "9px", opacity: ".55", marginTop: "2px" } }, "缓存中…") :
+            a.status === "error" ? el("div", { style: { fontSize: "9px", color: "#e5484d", marginTop: "2px" } }, "失败") : null)
+        }))
+    }
+    function FileInputButton() {
+      var fileRef = React.useRef(null)
+      function pick() { if (fileRef.current) fileRef.current.click() }
+      function onChange(e) {
+        addAttachments(e.target.files)
+        e.target.value = ""
+      }
+      return el("span", { style: { display: "inline-flex", alignItems: "center" } },
+        el("button", { className: "dsh-vision-btn", onClick: pick, title: "附加文件（docx/xlsx/pptx/pdf/txt…）", style: { fontSize: "13px" } }, "📎"),
+        el("input", { ref: fileRef, type: "file", multiple: true, accept: ".docx,.xlsx,.pptx,.pdf,.txt,.md,.csv,.json,.log", style: { display: "none" }, onChange: onChange }))
+    }
+
     var remote = null
+    // 本地 RPC：直连 host 端 HTTP 服务（绕开 typert/gateway 注册问题）。
+    // RPC 端口与 web 端口关联（3180→3192、3197→3193…），多实例互不冲突；host 端用 DSH_LOCAL_RPC_PORT 覆盖时以同规则对齐。
+    var webPort = (typeof location !== "undefined" && location.port) ? Number(location.port) : 3180
+    var RPC_PORT = 3192 + (webPort - 3180)
+    var RPC_ENDPOINT = "http://127.0.0.1:" + RPC_PORT + "/dsh-rpc"
     async function callHost(method, args) {
-      if (!remote) return { ok: false, error: "RPC 未初始化" }
-      if (typeof remote[method] !== "function") return { ok: false, error: "方法不存在: " + method }
       try {
-        var r = args === undefined ? await remote[method]() : await remote[method](args)
-        if (!r || r.ok !== true) return { ok: false, error: (r && r.error && r.error.message) || "调用失败" }
-        return r.value || { ok: true }
+        var r = await fetch(RPC_ENDPOINT, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ method: method, args: args })
+        })
+        var j = await r.json()
+        return j || { ok: false, error: "空响应" }
       } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
     }
 
@@ -496,7 +630,7 @@ window.__ModuleLoader__.load({
       React.useEffect(function () { load() }, [])
 
       function save() {
-        if (!key.trim()) { setMsg("请先粘贴你的智谱 API Key（以 sk- 开头）"); return }
+        if (!key.trim()) { setMsg("请先粘贴你的智谱 API Key"); return }
         setBusy(true); setMsg("")
         callHost("setVisionKey", { key: key.trim() }).then(function (res) {
           setBusy(false)
@@ -545,9 +679,9 @@ window.__ModuleLoader__.load({
           el("div", { className: "dsh-h2", style: { marginBottom: "10px" } }, "📖 新手教程：怎么开启识图"),
           el("div", { className: "dsh-muted" }, "视图模式让 DeepSeek「看懂」图片：把图片发给免费的智谱 GLM-4V-Flash 识别，识别出的文字 / 内容再喂给 DeepSeek 一起回答。"),
           el("ol", { style: { margin: "10px 0 0", paddingLeft: "20px", lineHeight: "1.9", fontSize: "13px", opacity: ".85" } },
-            el("li", {}, "点下面「去智谱官网申请免费 Key」按钮（会在浏览器打开官网）。"),
-            el("li", {}, "用手机号注册 / 登录智谱开放平台（open.bigmodel.cn）。"),
-            el("li", {}, "点页面右上角「API 密钥」→「创建 API Key」→ 复制那串以 sk- 开头的 Key。（免费模型，无需充值）"),
+            el("li", {}, "点下面「去智谱官网申请免费 Key」按钮（会在浏览器打开官网首页）。"),
+            el("li", {}, "用手机号注册 / 登录智谱开放平台（open.bigmodel.cn 首页）。"),
+            el("li", {}, "登录后进入「控制台」，找「API 密钥」→「创建 API Key」→ 复制那串 Key（开头无固定格式，不是 sk- 开头也正常）。（免费模型，无需充值）"),
             el("li", {}, "把 Key 粘贴到下面输入框 → 点「保存 Key」→ 再点「测试连接」。"),
             el("li", {}, "看到「连接成功」后，下面的识图区就能用了。")),
           el("div", { className: "dsh-note", style: { marginTop: "10px" } }, "· 隐私：Key 只保存在你自己电脑上，不上传、不开源。")),
@@ -555,7 +689,7 @@ window.__ModuleLoader__.load({
         el("div", { className: "dsh-card" },
           el("div", { className: "dsh-h2", style: { marginBottom: "10px" } }, "🔑 配置智谱 Key"),
           el("div", { style: { display: "flex", gap: "8px" } },
-            el("input", { value: key, onChange: function (e) { setKey(e.target.value) }, placeholder: "粘贴以 sk- 开头的智谱 API Key", className: "dsh-input", style: { flex: 1 } }),
+            el("input", { value: key, onChange: function (e) { setKey(e.target.value) }, placeholder: "粘贴你的智谱 API Key", className: "dsh-input", style: { flex: 1 } }),
             el("button", { className: "dsh-btn", onClick: save, disabled: busy }, "保存 Key")),
           el("div", { style: { display: "flex", gap: "8px", marginTop: "10px", flexWrap: "wrap" } },
             el("button", { className: "dsh-btn ghost", onClick: goto }, "🌐 去智谱官网申请免费 Key"),
@@ -590,7 +724,7 @@ window.__ModuleLoader__.load({
       React.useEffect(function () { load() }, [])
       function toggle() { var next = !isOpen; setOpen(next); if (next) load() }
       function save() {
-        if (!key.trim()) { setMsg("请先粘贴智谱 API Key（sk- 开头）"); return }
+        if (!key.trim()) { setMsg("请先粘贴智谱 API Key"); return }
         setBusy(true)
         callHost("setVisionKey", { key: key.trim() }).then(function (res) {
           setBusy(false)
@@ -630,7 +764,7 @@ window.__ModuleLoader__.load({
           cfg ? null : el("div", { className: "dsh-muted", style: { marginBottom: "8px" } }, "识别图片需要免费的智谱 GLM-4V-Flash 模型，请先领 Key："),
           cfg ? null : el("button", { className: "dsh-btn ghost", onClick: goto, style: { marginBottom: "8px" } }, "🌐 去智谱官网申请免费 Key"),
           el("div", { style: { display: "flex", gap: "6px", marginBottom: "8px" } },
-            el("input", { value: key, onChange: function (e) { setKey(e.target.value) }, placeholder: "粘贴 sk- 开头的 Key", className: "dsh-input", style: { flex: 1 } }),
+            el("input", { value: key, onChange: function (e) { setKey(e.target.value) }, placeholder: "粘贴你的智谱 API Key", className: "dsh-input", style: { flex: 1 } }),
             el("button", { className: "dsh-btn", onClick: save, disabled: busy }, "保存"),
             el("button", { className: "dsh-btn ghost", onClick: test, disabled: busy }, "测试")),
           el("div", { className: "dsh-muted", style: { fontSize: "12px", marginBottom: "8px" } }, "图片 → 识别 → 结果可复制到对话框。"),
@@ -693,6 +827,48 @@ window.__ModuleLoader__.load({
           function () { return React.createElement(VisionInputButton) }
         )
       })
+
+      // 文件附件按钮：拖入/选择 docx/xlsx/pptx/pdf/txt 等 → 图标卡片 + 本地缓存（agent 读本地路径）
+      ctx.slots.inject("conversation.input.left", function () {
+        return ctx.slots.register(
+          { name: "conversation.input.left", id: "dsh-attach", order: 110, label: function () { return "附加文件" } },
+          function () { return React.createElement(FileInputButton) }
+        )
+      })
+
+      // 附件卡片栏：输入区上方显示图标 + 标题 + 叉叉（千问样式）
+      ctx.slots.inject("conversation.input.dock", function () {
+        return ctx.slots.register(
+          { name: "conversation.input.dock", id: "dsh-attach-bar", order: 90, label: function () { return "附件卡片" } },
+          function () { return React.createElement(AttachmentBar) }
+        )
+      })
+
+      // 全局拖拽：仅拦截 docx/xlsx/pptx/pdf/txt 等文档（图标卡片方案，不解析内容）；图片等留给原生聊天框
+      if (typeof document !== "undefined") {
+        document.addEventListener("dragover", function (e) {
+          try {
+            var types = e.dataTransfer && e.dataTransfer.types
+            if (!types || Array.prototype.indexOf.call(types, "Files") === -1) return
+            var items = e.dataTransfer.items
+            for (var i = 0; i < items.length; i++) {
+              var f = items[i] && items[i].getAsFile && items[i].getAsFile()
+              if (f && DOC_RE.test(f.name || "")) { e.preventDefault(); return }
+            }
+          } catch (e2) {}
+        }, true)
+        document.addEventListener("drop", function (e) {
+          try {
+            var files = e.dataTransfer && e.dataTransfer.files
+            if (!files || files.length === 0) return
+            var docs = Array.prototype.slice.call(files).filter(function (f) { return DOC_RE.test(f.name || "") })
+            if (docs.length === 0) return // 图片等 → 原生处理
+            e.preventDefault()
+            e.stopPropagation()
+            addAttachments(docs)
+          } catch (e2) {}
+        }, true)
+      }
     }
 
     exports.apply = apply
