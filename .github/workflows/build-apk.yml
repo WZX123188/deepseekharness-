@@ -36,7 +36,7 @@ jobs:
       - name: Build APK
         working-directory: mobile/android
         env:
-          KEYSTORE_FILE: release.keystore
+          KEYSTORE_FILE: ${{ github.workspace }}/mobile/android/release.keystore
           KEYSTORE_PASSWORD: dshclient2024
           KEY_ALIAS: dshclient
           KEY_PASSWORD: dshclient2024
