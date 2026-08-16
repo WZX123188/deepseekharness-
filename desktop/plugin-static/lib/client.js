@@ -19,7 +19,8 @@ window.__ModuleLoader__.load({
       direct("getPermissionMode"), direct("setPermissionMode", [argsParam()]),
       direct("listTools"), direct("installTool", [argsParam()]), direct("setToolEnabled", [argsParam()]), direct("uninstallTool", [argsParam()]),
       direct("listPlugins"), direct("installPlugin", [argsParam()]), direct("setPluginEnabled", [argsParam()]), direct("uninstallPlugin", [argsParam()]),
-      direct("listProjects"), direct("createProject", [argsParam()]), direct("openFeedback", [argsParam()])
+      direct("listProjects"), direct("createProject", [argsParam()]), direct("openFeedback", [argsParam()]),
+      direct("getVisionStatus"), direct("setVisionKey", [argsParam()]), direct("clearVisionKey"), direct("testVision"), direct("seeImage", [argsParam()]), direct("openVisionSite")
     ]
 
     var BLUE = "#4d6bfe"
@@ -307,6 +308,106 @@ window.__ModuleLoader__.load({
         el("div", { className: "dsh-muted" }, "提交后会打开 GitHub 的 Issue 提交页，需你登录 GitHub 账号后点确认发布；本机不保存任何账号信息。"))
     }
 
+    function VisionSection() {
+      var st = React.useState({ status: "loading", configured: false, model: "" })
+      var state = st[0]; var setState = st[1]
+      var k = React.useState(""); var key = k[0]; var setKey = k[1]
+      var m = React.useState(""); var msg = m[0]; var setMsg = m[1]
+      var b = React.useState(false); var busy = b[0]; var setBusy = b[1]
+      var im = React.useState(""); var image = im[0]; var setImage = im[1]
+      var rs = React.useState(""); var result = rs[0]; var setResult = rs[1]
+
+      function load() {
+        setState({ status: "loading", configured: false, model: "" })
+        callHost("getVisionStatus").then(function (res) {
+          if (res && res.ok) setState({ status: "ok", configured: !!res.configured, model: res.model || "" })
+          else setState({ status: "error", configured: false, model: "" })
+        }).catch(function () { setState({ status: "error", configured: false, model: "" }) })
+      }
+      React.useEffect(function () { load() }, [])
+
+      function save() {
+        if (!key.trim()) { setMsg("请先粘贴你的智谱 API Key（以 sk- 开头）"); return }
+        setBusy(true); setMsg("")
+        callHost("setVisionKey", { key: key.trim() }).then(function (res) {
+          setBusy(false)
+          if (res && res.ok) { setMsg("已保存 ✓"); setKey(""); load() }
+          else setMsg((res && res.error) || "保存失败")
+        }).catch(function (e) { setBusy(false); setMsg(String((e && e.message) || e)) })
+      }
+      function test() {
+        setBusy(true); setMsg("正在测试连接…")
+        callHost("testVision").then(function (res) {
+          setBusy(false)
+          if (res && res.ok) setMsg("连接成功 ✓ 视图功能已可用")
+          else setMsg((res && res.error) || "测试失败")
+        }).catch(function (e) { setBusy(false); setMsg(String((e && e.message) || e)) })
+      }
+      function clearKey() {
+        setBusy(true)
+        callHost("clearVisionKey").then(function () { setBusy(false); setKey(""); load() }).catch(function () { setBusy(false); load() })
+      }
+      function goto() { callHost("openVisionSite").then(function () {}) }
+      function onFile(e) {
+        var f = e.target.files && e.target.files[0]
+        if (!f) return
+        var rd = new FileReader()
+        rd.onload = function () { setImage(rd.result); setResult("") }
+        rd.readAsDataURL(f)
+      }
+      function recognize() {
+        if (!image) { setMsg("请先选择一张图片"); return }
+        setBusy(true); setResult(""); setMsg("识别中…")
+        callHost("seeImage", { image: image }).then(function (res) {
+          setBusy(false)
+          if (res && res.ok) { setResult(res.text); setMsg("识别完成 ✓") }
+          else setMsg((res && res.error) || "识别失败")
+        }).catch(function (e) { setBusy(false); setMsg(String((e && e.message) || e)) })
+      }
+
+      var configured = state.configured
+      var statusBadge = configured ? el("span", { className: "dsh-ok", style: { fontWeight: 600 } }, "● 已启用") : el("span", { className: "dsh-muted" }, "● 未启用")
+      var msgOk = msg.indexOf("成功") !== -1 || msg.indexOf("已保存") !== -1
+
+      return el("div", { className: "dsh-page" },
+        el("div", { className: "dsh-head" }, el("h2", { className: "dsh-h2" }, "视图模式（识图）"), statusBadge),
+
+        el("div", { className: "dsh-card" },
+          el("div", { className: "dsh-h2", style: { marginBottom: "10px" } }, "📖 新手教程：怎么开启识图"),
+          el("div", { className: "dsh-muted" }, "视图模式让 DeepSeek「看懂」图片：把图片发给免费的智谱 GLM-4V-Flash 识别，识别出的文字 / 内容再喂给 DeepSeek 一起回答。"),
+          el("ol", { style: { margin: "10px 0 0", paddingLeft: "20px", lineHeight: "1.9", fontSize: "13px", opacity: ".85" } },
+            el("li", {}, "点下面「去智谱官网申请免费 Key」按钮（会在浏览器打开官网）。"),
+            el("li", {}, "用手机号注册 / 登录智谱开放平台（open.bigmodel.cn）。"),
+            el("li", {}, "点页面右上角「API 密钥」→「创建 API Key」→ 复制那串以 sk- 开头的 Key。（免费模型，无需充值）"),
+            el("li", {}, "把 Key 粘贴到下面输入框 → 点「保存 Key」→ 再点「测试连接」。"),
+            el("li", {}, "看到「连接成功」后，下面的识图区就能用了。")),
+          el("div", { className: "dsh-note", style: { marginTop: "10px" } }, "· 隐私：Key 只保存在你自己电脑上，不上传、不开源。")),
+
+        el("div", { className: "dsh-card" },
+          el("div", { className: "dsh-h2", style: { marginBottom: "10px" } }, "🔑 配置智谱 Key"),
+          el("div", { style: { display: "flex", gap: "8px" } },
+            el("input", { value: key, onChange: function (e) { setKey(e.target.value) }, placeholder: "粘贴以 sk- 开头的智谱 API Key", className: "dsh-input", style: { flex: 1 } }),
+            el("button", { className: "dsh-btn", onClick: save, disabled: busy }, "保存 Key")),
+          el("div", { style: { display: "flex", gap: "8px", marginTop: "10px", flexWrap: "wrap" } },
+            el("button", { className: "dsh-btn ghost", onClick: goto }, "🌐 去智谱官网申请免费 Key"),
+            el("button", { className: "dsh-btn ghost", onClick: test, disabled: busy }, "测试连接"),
+            configured ? el("button", { className: "dsh-btn ghost", onClick: clearKey, disabled: busy }, "清除 Key") : null),
+          msg ? el("div", { className: msgOk ? "dsh-ok" : "dsh-err", style: { marginTop: "10px" } }, msg) : null),
+
+        el("div", { className: "dsh-card", style: configured ? {} : { opacity: ".55" } },
+          el("div", { className: "dsh-head" },
+            el("div", { className: "dsh-h2" }, "🖼 识图"),
+            configured ? null : el("span", { className: "dsh-muted", style: { fontSize: "12px" } }, "配置 Key 后启用")),
+          el("div", { style: { marginTop: "10px" } },
+            el("input", { type: "file", accept: "image/*", onChange: onFile, disabled: !configured, className: "dsh-input" })),
+          image ? el("img", { src: image, style: { maxWidth: "100%", maxHeight: "240px", borderRadius: "8px", marginTop: "10px", display: "block" } }) : null,
+          el("div", { style: { marginTop: "10px" } },
+            el("button", { className: "dsh-btn", onClick: recognize, disabled: !configured || busy }, busy ? "识别中…" : "开始识别")),
+          result ? el("div", { style: { marginTop: "12px" } },
+            el("div", { className: "dsh-muted", style: { marginBottom: "6px" } }, "识别结果（点一下全选，可直接复制到对话框）："),
+            el("textarea", { value: result, readOnly: true, rows: 8, className: "dsh-input", onFocus: function (e) { e.target.select() } })) : null))
+    }
+
     async function apply(ctx) {
       await ctx.remote.$mount({ package: PKG, descriptors: DESCRIPTORS })
 
@@ -343,6 +444,7 @@ window.__ModuleLoader__.load({
       section("dsh-guide", 45, "使用指南", GuideSection)
       section("dsh-feedback", 46, "意见区", FeedbackSection)
       section("dsh-permission", 6, "权限", PermissionSection)
+      section("dsh-vision", 25, "视图模式", VisionSection)
     }
 
     exports.apply = apply

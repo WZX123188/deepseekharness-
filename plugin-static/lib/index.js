@@ -10,6 +10,11 @@ const CONFIG_PATH = path.join(HOME, 'dsh-client-config.json')
 const MARKET_PATH = path.join(HOME, 'dsh-market.json')
 const USAGE_PATH = path.join(HOME, 'dsh-client-usage.json')
 
+// 视图模式：智谱 GLM-4V-Flash（免费国产视觉模型，OpenAI 兼容接口）
+const VISION_URL = 'https://open.bigmodel.cn/api/paas/v4/chat/completions'
+const VISION_MODEL = 'glm-4v-flash'
+const VISION_SITE = 'https://open.bigmodel.cn/'
+
 const BALANCE_URL = 'https://api.deepseek.com/user/balance'
 const PKG = '@deepseek-ai/dsh'
 const REGISTRY_LATEST = 'https://registry.npmmirror.com/' + PKG.replace('/', '%2f') + '/latest'
@@ -35,6 +40,7 @@ const PLUGINS = [
 ]
 
 let permissionMode = 'ask'
+let visionKey = ''
 
 function balanceScript() { return "(async()=>{try{const r=await fetch('" + BALANCE_URL + "',{headers:{Authorization:'Bearer '+process.env.DSH_BALANCE_KEY,Accept:'application/json'}});const t=await r.text();console.log(JSON.stringify({status:r.status,body:t}))}catch(e){console.error(String((e&&e.stack)||e));process.exit(1)}})()" }
 function latestScript() { return "(async()=>{const r=await fetch('" + REGISTRY_LATEST + "');const j=await r.json();console.log(String(j.version||''))})().catch(e=>{console.error(String((e&&e.stack)||e));process.exit(1)})" }
@@ -51,6 +57,7 @@ export class DshClientFeaturesService extends TypertRemoteService {
     try {
       const cfg = await this.readJsonFile(CONFIG_PATH)
       permissionMode = (cfg && cfg.permissionMode === 'trust') ? 'trust' : 'ask'
+      visionKey = (cfg && typeof cfg.visionKey === 'string') ? cfg.visionKey : ''
     } catch (e) {}
   }
 
@@ -94,7 +101,9 @@ export class DshClientFeaturesService extends TypertRemoteService {
     const mode = args && args.mode
     if (mode !== 'ask' && mode !== 'trust') return { ok: false, error: '无效模式' }
     permissionMode = mode
-    await this.writeJsonFile(CONFIG_PATH, { permissionMode: mode })
+    const cfg = await this.readJsonFile(CONFIG_PATH)
+    cfg.permissionMode = mode
+    await this.writeJsonFile(CONFIG_PATH, cfg)
     return { ok: true, mode: permissionMode }
   }
 
@@ -258,6 +267,69 @@ export class DshClientFeaturesService extends TypertRemoteService {
       const bodyText = (typeof body === 'string' ? body : '') + '\n\n---\n（由 DSH 客户端意见区提交）'
       const url = 'https://github.com/' + FEEDBACK_REPO + '/issues/new?title=' + encodeURIComponent(fullTitle) + '&body=' + encodeURIComponent(bodyText) + '&labels=' + encodeURIComponent('反馈')
       await this.runCmd(['start', '', url], 8000)
+      return { ok: true }
+    } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
+  }
+
+  async getVisionStatus() {
+    return { ok: true, configured: visionKey !== '', model: VISION_MODEL, site: VISION_SITE }
+  }
+
+  async setVisionKey(args) {
+    const k = args && args.key
+    if (typeof k !== 'string') return { ok: false, error: '无效的 Key' }
+    visionKey = k.trim()
+    const cfg = await this.readJsonFile(CONFIG_PATH)
+    cfg.visionKey = visionKey
+    await this.writeJsonFile(CONFIG_PATH, cfg)
+    return { ok: true, configured: visionKey !== '' }
+  }
+
+  async clearVisionKey() {
+    visionKey = ''
+    const cfg = await this.readJsonFile(CONFIG_PATH)
+    cfg.visionKey = ''
+    await this.writeJsonFile(CONFIG_PATH, cfg)
+    return { ok: true, configured: false }
+  }
+
+  async testVision() {
+    try {
+      if (!visionKey) return { ok: false, error: '请先填写并保存智谱 API Key' }
+      const res = await fetch(VISION_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + visionKey }, body: JSON.stringify({ model: VISION_MODEL, messages: [{ role: 'user', content: 'ping' }] }) })
+      const text = await res.text()
+      if (res.status !== 200) {
+        let msg = '连接失败（HTTP ' + res.status + '）'
+        try { const b = JSON.parse(text); if (b && b.error && b.error.message) msg = String(b.error.message) } catch (e) {}
+        return { ok: false, error: msg }
+      }
+      return { ok: true }
+    } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
+  }
+
+  async seeImage(args) {
+    try {
+      if (!visionKey) return { ok: false, error: '未配置智谱视觉 API Key：请先在「视图模式」页点「去官网申请」领免费 Key 并保存。' }
+      const image = args && args.image
+      if (typeof image !== 'string' || image === '') return { ok: false, error: '没有图片数据' }
+      const prompt = (args && args.prompt) || '请详细、准确地描述这张图片里的全部内容，包括文字、数字、图表和结构。'
+      const res = await fetch(VISION_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + visionKey }, body: JSON.stringify({ model: VISION_MODEL, messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: image } }, { type: 'text', text: prompt }] }] }) })
+      const text = await res.text()
+      if (res.status !== 200) {
+        let msg = '识别失败（HTTP ' + res.status + '）'
+        try { const b = JSON.parse(text); if (b && b.error && b.error.message) msg = String(b.error.message) } catch (e) {}
+        return { ok: false, error: msg }
+      }
+      let content = ''
+      try { const b = JSON.parse(text); content = (b.choices && b.choices[0] && b.choices[0].message && b.choices[0].message.content) || '' } catch (e) {}
+      if (typeof content !== 'string') content = JSON.stringify(content)
+      return { ok: true, text: content, model: VISION_MODEL }
+    } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
+  }
+
+  async openVisionSite() {
+    try {
+      await this.runCmd(['start', '', VISION_SITE], 8000)
       return { ok: true }
     } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
   }

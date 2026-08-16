@@ -178,3 +178,21 @@ installer.nsh 快捷方式勾选页，说明.txt（UTF-8 BOM + 免责声明）�
 3. Office 全家桶拖拽 2.2.1（Word/PPT/Excel + WPS，预览→审核→保存）。
 4. 视频剪辑（OBS/达芬奇）——方案待用户审核。
 5. 自定义界面背景。
+
+---
+
+## v2.1.0：视图模式（识图，智谱 GLM-4V-Flash）
+
+- 宿主 `plugin-static/lib/index.js` 新增 RPC：`getVisionStatus` / `setVisionKey` / `clearVisionKey` / `testVision` / `seeImage` / `openVisionSite`；Key 存在 `dsh-client-config.json` 的 `visionKey` 字段（与 permissionMode 合并，`setPermissionMode` 也改成读-改-写，避免互相覆盖）。
+- 视觉调用用**宿主直接 `fetch`**（Node24 自带，静态插件是真实 ESM 有全量 Node 权限），端点 `https://open.bigmodel.cn/api/paas/v4/chat/completions`，模型 `glm-4v-flash`；图片用 base64 dataURL 走 `image_url.url`。
+- 客户端 `client.js` 新增「视图模式（识图）」settings 页：默认灰态 + 小白五步教程 +「🌐 去智谱官网申请免费 Key」按钮（`openVisionSite` 打开浏览器）+ 保存/测试/清除 Key + 识图区（选图→识别→结果可一键全选复制）。
+- 假 key 实测端点返回 401 中文错误，证明端点/模型名/fetch 全通；真 key 待用户填后验证。
+- 版本 2.0.1 → 2.1.0，产物：`DeepSeek-Client-Setup-2.1.0.exe` + `DeepSeekClient-portable-2.1.0-win-x64.zip`。
+
+### 下一步
+
+1. 用户填智谱 Key 验收视图。
+2. PDF 实时翻译 2.2.0（文字版+扫描版，精准翻数据手册）。
+3. Office 全家桶拖拽 2.2.1（Word/PPT/Excel + WPS，预览→审核→保存）。
+4. 视频剪辑（OBS/达芬奇）——方案待用户审核。
+5. 自定义界面背景。
