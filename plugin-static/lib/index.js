@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import http from 'node:http'
 import { fileURLToPath } from 'node:url'
-import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from 'node:fs'
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 
 // 本插件所在目录（用于定位 office.mjs 辅助脚本）
@@ -444,6 +444,24 @@ export class DshClientFeaturesService extends TypertRemoteService {
       try { const b = JSON.parse(r.text); content = (b.choices && b.choices[0] && b.choices[0].message && b.choices[0].message.content) || '' } catch (e) {}
       if (typeof content !== 'string') content = JSON.stringify(content)
       return { ok: true, text: content, model: r.model }
+    } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
+  }
+
+  // 把拖入对话框的文档（pdf/docx/xlsx/pptx）保存到本机 <DSH_HOME>/uploads/，
+  // 返回绝对路径；客户端把它以「[📎 已附加文档: 路径]」文本插入输入框，
+  // agent 收到后可直接 read 文件来翻译 / 回答。
+  async saveDraftFile(args) {
+    try {
+      const name = args && args.name
+      const data = args && args.data
+      if (typeof name !== 'string' || name === '' || typeof data !== 'string' || data === '') return { ok: false, error: '无效文件数据' }
+      const safe = path.basename(name).replace(/[\\/:*?"<>|]/g, '_')
+      const dir = path.join(HOME, 'uploads')
+      mkdirSync(dir, { recursive: true })
+      const raw = String(data).replace(/^data:[^;]*;base64,/, '')
+      const file = path.join(dir, Date.now() + '-' + safe)
+      writeFileSync(file, Buffer.from(raw, 'base64'))
+      return { ok: true, path: file, name: safe }
     } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
   }
 

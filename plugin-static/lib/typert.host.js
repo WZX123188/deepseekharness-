@@ -61,6 +61,8 @@ export const TYPERT = {
     direct('officeProbe', [argsParam()]),
     direct('translateOffice', [argsParam()]),
     direct('saveOffice', [argsParam()]),
+    // 对话框文档暂存
+    direct('saveDraftFile', [argsParam()]),
     // 壁纸
     direct('getWallpaper'),
     direct('setWallpaper', [argsParam()]),

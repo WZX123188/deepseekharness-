@@ -24,6 +24,7 @@ window.__ModuleLoader__.load({
       direct("translateText", [argsParam()]), direct("translatePdf", [argsParam()]),
       direct("pdfProbe", [argsParam()]), direct("officeProbe", [argsParam()]),
       direct("translateOffice", [argsParam()]), direct("saveOffice", [argsParam()]),
+      direct("saveDraftFile", [argsParam()]),
       direct("getWallpaper"), direct("setWallpaper", [argsParam()])
     ]
 
@@ -494,6 +495,67 @@ window.__ModuleLoader__.load({
       return { openFile: openFile, close: close }
     }
 
+    // ---- 附件暂存：图片自动识图转文字、文档保存到本机并把路径写进输入框 ----
+    function inComposerArea(target) {
+      try { return !!(target && target.closest && target.closest("[data-composer-seat]")) } catch (e) { return false }
+    }
+    function toast(text) {
+      var t = document.getElementById("dsh-toast")
+      if (!t) {
+        t = document.createElement("div")
+        t.id = "dsh-toast"
+        t.style.cssText = "position:fixed;bottom:100px;left:50%;transform:translateX(-50%);background:rgba(28,30,36,.94);color:#fff;padding:10px 16px;border-radius:10px;font:13px/1.5 system-ui,'Microsoft YaHei',sans-serif;z-index:2147483647;max-width:80vw;box-shadow:0 8px 24px rgba(0,0,0,.35);display:none;white-space:pre-wrap;text-align:left"
+        document.body.appendChild(t)
+      }
+      t.textContent = text
+      t.style.display = "block"
+      clearTimeout(t._timer)
+      t._timer = setTimeout(function () { t.style.display = "none" }, 5000)
+    }
+    function insertIntoComposer(text) {
+      try {
+        var edit = document.querySelector('[data-composer-seat] [contenteditable="true"]') || document.querySelector('[contenteditable="true"]')
+        if (!edit) return false
+        edit.focus()
+        if (edit.isContentEditable) { document.execCommand("insertText", false, text); return true }
+        edit.value = (edit.value || "") + text
+        edit.dispatchEvent(new Event("input", { bubbles: true }))
+        return true
+      } catch (e) { return false }
+    }
+    function attachImage(file) {
+      toast("🖼 正在识别图片…")
+      var rd = new FileReader()
+      rd.onload = function () {
+        callHost("seeImage", { image: rd.result }).then(function (res) {
+          if (res && res.ok && res.text) {
+            var ok = insertIntoComposer("\n[🖼 图片内容]\n" + res.text + "\n")
+            toast(ok ? "✅ 图片已识别为文字，可直接补充问题后发送" : "识别成功但未能写入输入框，请复制：\n" + res.text.slice(0, 160))
+          } else {
+            toast("⚠ 图片识别失败：" + ((res && res.error) || "请先在「设置 → 视图模式」配置智谱视觉 Key"))
+          }
+        }).catch(function (e) { toast("⚠ 图片识别失败：" + String((e && e.message) || e)) })
+      }
+      rd.readAsDataURL(file)
+    }
+    function attachDoc(file) {
+      toast("📎 正在保存文档…")
+      var rd = new FileReader()
+      rd.onload = function () {
+        callHost("saveDraftFile", { name: file.name, data: rd.result }).then(function (res) {
+          if (res && res.ok && res.path) {
+            var ok = insertIntoComposer("\n[📎 已附加文档: " + res.path + "]\n")
+            toast(ok ? "✅ 文档已附加（" + file.name + "），可直接提问或让我翻译" : "文档已保存，未能写入输入框，路径：" + res.path)
+          } else toast("⚠ 文档保存失败：" + ((res && res.error) || "未知错误"))
+        }).catch(function (e) { toast("⚠ 文档保存失败：" + String((e && e.message) || e)) })
+      }
+      rd.readAsDataURL(file)
+    }
+    function DocDock() {
+      return el("div", { style: { display: "flex", alignItems: "center", gap: "8px", padding: "6px 4px 0", fontSize: "12px", opacity: ".75", flexWrap: "wrap" } },
+        el("span", {}, "📎 拖入 PDF / Word / Excel / PPT 可附加给我（直接提问或让我翻译）；🖼 拖入 / 粘贴图片会自动识图转成文字。"))
+    }
+
     function OfficeSection() {
       var ch = React.useState(null); var chunks = ch[0]; var setChunks = ch[1]
       var fb = React.useState(""); var fileB64 = fb[0]; var setFileB64 = fb[1]
@@ -888,27 +950,56 @@ window.__ModuleLoader__.load({
         )
       })
 
-      // 全局拖拽：把 PDF / Word / Excel / PPT 拖到窗口任意位置（包括聊天框）→ 打开实时翻译面板。
-      // 图片等其它文件交给系统/输入框原有处理（原生聊天输入框支持图片附件暂存随消息发送），
-      // 只在 drop 时阻止浏览器默认“打开文件”；原生文件输入框里的拖放也交给它自己。
+      // 附件暂存提示条：输入框下方提示可拖入文档/图片
+      ctx.slots.inject("conversation.input.dock", function () {
+        return ctx.slots.register(
+          { name: "conversation.input.dock", id: "dsh-doc-dock", order: 200, label: function () { return "附件" } },
+          function () { return React.createElement(DocDock) }
+        )
+      })
+
+      // 全局拖放/粘贴：
+      // - 图片拖到/粘贴到聊天框 → 自动识图转文字插入输入框（当前模型不支持图片，这是能“看图”的方式）
+      // - PDF/Word/Excel/PPT 拖到聊天框 → 保存到本机 + 路径文本插入输入框（我可读文件翻译/回答）
+      // - 文档拖到其它位置（如设置页翻译区）→ 打开实时翻译面板
       var docModal = null
       if (typeof document !== "undefined") {
         document.addEventListener("dragover", function (e) {
           if (e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.indexOf("Files") !== -1) { e.preventDefault() }
         })
+        // 捕获阶段拦截图片粘贴，避免原生把它当附件（模型不支持图片会发送失败）
+        document.addEventListener("paste", function (e) {
+          var files = e.clipboardData && e.clipboardData.files
+          if (!files || files.length === 0) return
+          var f = files[0]
+          if (f.type && f.type.indexOf("image/") === 0) {
+            e.preventDefault(); e.stopPropagation()
+            attachImage(f)
+          }
+        }, true)
         document.addEventListener("drop", function (e) {
           var files = e.dataTransfer && e.dataTransfer.files
           if (!files || files.length === 0) return
           var f = files[0]
-          var ext = (f.name || "").toLowerCase().match(/\.(pdf|docx|xlsx|pptx)$/)
           var onFileInput = e.target && e.target.tagName === "INPUT" && e.target.type === "file"
           if (onFileInput) return
-          if (!ext) { e.preventDefault(); return }
+          var name = f.name || ""
+          var ext = name.toLowerCase().match(/\.(pdf|docx|xlsx|pptx)$/)
+          if (!ext) {
+            if (f.type && f.type.indexOf("image/") === 0 && inComposerArea(e.target)) {
+              e.preventDefault(); e.stopPropagation()
+              attachImage(f)
+            } else { e.preventDefault() }
+            return
+          }
           e.preventDefault(); e.stopPropagation()
-          if (!docModal) docModal = showDocTranslateModal()
-          var rd = new FileReader()
-          rd.onload = function () { docModal.openFile(ext[1] === "pdf" ? "pdf" : "office", rd.result, f.name) }
-          rd.readAsDataURL(f)
+          if (inComposerArea(e.target)) { attachDoc(f) }
+          else {
+            if (!docModal) docModal = showDocTranslateModal()
+            var rd = new FileReader()
+            rd.onload = function () { docModal.openFile(ext[1] === "pdf" ? "pdf" : "office", rd.result, f.name) }
+            rd.readAsDataURL(f)
+          }
         })
       }
     }
