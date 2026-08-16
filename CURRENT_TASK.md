@@ -1,29 +1,29 @@
 # 当前任务断点（CURRENT_TASK.md）
 
-> 本文件是「自动续跑」的断点。维护规则：
-> - **开始长任务**时填写：目标 / 进度 / 下一步 / 产物路径
-> - **每完成一步**更新"进度"与"下一步"
-> - **全部完成**把状态改为「无任务 / 已完成」
-> - 新会话 / 重启后：agent 自动读本文件，若有未完成任务会汇报并等你确认后继续
->
-> 配套：`PROGRESS.md`（详细档案）、`RESUME.md`（恢复指南）、`聊天记录\对话记录.md`（工作日志）
+> 维护规则：开始长任务填写；每步更新；完成改状态「无任务 / 已完成」。新会话自动读本文件。
 
-## 状态：进行中 — 任务一（4.0.0）
+## 状态：进行中 — 任务二（5.0.0 手机App + 远程通信）
 
 ### 任务目标
-用户授权自主执行到关机：① 视图+拖拽收尾 → 4.0.0 → GitHub+release；② 手机App（APK云构建+PWA）+远程通信（3191服务+配对码+免费隧道）→ 5.0.0；③ 语音转文字（电脑+手机）→ 5.1.0；每阶段测试端先跑、更新聊天记录、上传GitHub；最后关机。
+用户授权自主执行到关机：① 视图+拖拽收尾 → 4.0.0 → GitHub+release；② 手机App（APK云构建+PWA）+远程通信（3191服务+配对码+免费隧道）→ 5.0.0；③ 语音转文字（电脑+手机）→ 5.1.0；最后关机。
 
 ### 进度
-- [x] 建立 goal + 断点文件（本文件）
-- [ ] 任务一：审查视图/拖拽代码（3.0.3修复确认）→ 补遗留 → 测试端验证 → 同步 → 聊天记录 → 4.0.0打包 → GitHub+release
-- [ ] 任务二：远程通信服务 + PWA + 安卓APK项目 + 云构建 + 测试 → 5.0.0 → GitHub+release
-- [ ] 任务三：语音转文字（电脑+手机+麦克风权限+图标）→ 5.1.0 → GitHub+release
+- [x] 任务一：视图/拖拽实测通过（识图真实key+模型回退+附件缓存）→ 同步 → 4.0.0打包（portable-4.0.0-win-x64.zip）
+- [x] 任务一：git commit aedd100 + tag v4.0.0（26文件，大目录已 gitignore 排除）
+- [ ] 任务一：GitHub push + release（**网络不可达**，待网络恢复执行 push-release.ps1 -Tag v4.0.0）
+- [ ] 任务二：电脑端 3191 通信服务（配对码+加密+聊天SSE+文件浏览/下载）
+- [ ] 任务二：手机网页 PWA（聊天界面+文件列表+配对码，本地浏览器可测）
+- [ ] 任务二：安卓 WebView 项目 + GitHub Actions 云构建 APK
+- [ ] 任务二：免费隧道方案（局域网直连 + Tailscale 说明）
+- [ ] 任务二：测试 → 聊天记录 → 5.0.0 → GitHub+release
+- [ ] 任务三：语音转文字（电脑+手机+麦克风权限+对话框图标）→ 5.1.0
 - [ ] 收尾：最终聊天记录 → 关机
 
 ### 下一步
-开始任务一：检查 plugin-static 的视图（VISION_SITE 首页 + 密钥 + 模型回退）与拖拽附件（图标卡片 + cacheAttachment）代码是否完整，补任何遗留问题，然后在 test-env 验证。
+写电脑端 3191 远程通信服务（plugin-static index.js 新增 RemoteControl 服务：配对码生成/验证、token 加密、聊天 SSE、文件浏览/下载 API）。
 
 ### 产物路径
-- 4.0.0：`G:\dsh客户端\desktop\release\DeepSeekClient-portable-4.0.0-win-x64.zip`
-- 5.0.0 / 5.1.0：同上（版本递增）+ 手机端项目 `G:\dsh客户端\mobile\`
-- GitHub：`WZX123188/deepseekharness-`（tag 4.0.0/5.0.0/5.1.0 + release）
+- 4.0.0：`G:\dsh客户端\desktop\release\DeepSeekClient-portable-4.0.0-win-x64.zip` ✓
+- 手机端项目：`G:\dsh客户端\mobile\`（PWA + 安卓 WebView）
+- 推送脚本：`G:\dsh客户端\push-release.ps1`（网络恢复后执行）
+- GitHub：`WZX123188/deepseekharness-`（tag v4.0.0 已建，push 待网络）

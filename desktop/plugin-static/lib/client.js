@@ -24,7 +24,8 @@ window.__ModuleLoader__.load({
       direct("parseAttachment", [argsParam()]),
       direct("translateText", [argsParam()]), direct("translatePdf", [argsParam()]),
       direct("translateOffice", [argsParam()]), direct("saveOffice", [argsParam()]),
-      direct("getWallpaper"), direct("setWallpaper", [argsParam()])
+      direct("getWallpaper"), direct("setWallpaper", [argsParam()]),
+      direct("getRemoteInfo")
     ]
 
     var BLUE = "#4d6bfe"
@@ -205,6 +206,26 @@ window.__ModuleLoader__.load({
         var j = await r.json()
         return j || { ok: false, error: "空响应" }
       } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
+    }
+
+    // ===== 手机远程（v5.0.0）：显示配对码 + 地址 + 免费隧道说明 =====
+    function RemoteSection() {
+      var st = React.useState(null); var info = st[0]; var setInfo = st[1]
+      function load() { callHost("getRemoteInfo").then(function (res) { if (res && res.ok) setInfo(res) }).catch(function () {}) }
+      React.useEffect(function () { load() }, [])
+      return el("div", { className: "dsh-page" },
+        el("div", { className: "dsh-head" }, el("h2", { className: "dsh-h2" }, "📱 手机远程"), el("button", { className: "dsh-btn ghost", onClick: load }, "刷新")),
+        el("div", { className: "dsh-card" },
+          el("div", { className: "dsh-h2", style: { marginBottom: "10px" } }, "🔑 配对码"),
+          info && info.code ? el("div", { style: { fontSize: "28px", fontWeight: 700, letterSpacing: "4px", color: "#4d6bfe" } }, info.code) : el("div", { className: "dsh-muted" }, "加载中…"),
+          el("div", { className: "dsh-note", style: { marginTop: "8px" } }, "手机端打开网页或 App，输入下方地址 + 这个配对码即可连接。")),
+        el("div", { className: "dsh-card" },
+          el("div", { className: "dsh-h2", style: { marginBottom: "8px" } }, "🌐 连接地址"),
+          info && info.ips && info.ips.length ? info.ips.map(function (ip) { return el("div", { key: ip, className: "dsh-value", style: { fontSize: "14px" } }, ip + ":" + (info.port || 3191)) }) : el("div", { className: "dsh-muted" }, "未检测到局域网地址"),
+          el("div", { className: "dsh-note", style: { marginTop: "8px", lineHeight: "1.7" } }, "· 同一 WiFi：手机直接连上面地址（局域网，私密）。" + "\n· 人在外：电脑和手机都装免费 Tailscale（组网即虚拟局域网，WireGuard 加密），连 Tailscale 分配的 IP 即可。")),
+        el("div", { className: "dsh-card" },
+          el("div", { className: "dsh-h2", style: { marginBottom: "8px" } }, "📥 手机端安装"),
+          el("div", { className: "dsh-muted", style: { lineHeight: "1.8" } }, "· 安卓：GitHub Release 下载 APK 安装（或直接用浏览器打开网页）。" + "\n· 苹果：Safari 打开网页 → 分享 → 添加到主屏幕。" + "\n· 网页地址：http://<上面地址>/mobile（电脑端自动提供）。")))
     }
 
     function BalanceSection() {
@@ -819,6 +840,7 @@ window.__ModuleLoader__.load({
       section("dsh-pdf", 26, "PDF 翻译", PdfSection)
       section("dsh-office", 27, "Office 翻译", OfficeSection)
       section("dsh-wallpaper", 28, "界面背景", WallpaperSection)
+      section("dsh-remote", 29, "手机远程", RemoteSection)
 
       // 视图模式开关：放到首页对话框（输入框工具行左侧）
       ctx.slots.inject("conversation.input.left", function () {

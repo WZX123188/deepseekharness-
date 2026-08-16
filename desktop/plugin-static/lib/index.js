@@ -3,8 +3,9 @@
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from 'node:fs'
+import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync, readdirSync, statSync } from 'node:fs'
 import { createServer } from 'node:http'
+import { randomBytes, randomInt } from 'node:crypto'
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { TYPERT } from './typert.host.js'
@@ -497,6 +498,19 @@ export class DshClientFeaturesService extends TypertRemoteService {
     } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
   }
 
+  // 手机远程信息：配对码 + 端口 + 本机局域网 IP（供客户端「手机远程」页展示）
+  async getRemoteInfo() {
+    const ips = []
+    try {
+      const nifs = os.networkInterfaces()
+      for (const name in nifs) {
+        const list = nifs[name] || []
+        for (const n of list) if (n.family === 'IPv4' && !n.internal) ips.push(n.address)
+      }
+    } catch (e) {}
+    return { ok: true, port: RC_PORT, code: rcCode, ips }
+  }
+
   async getWallpaper() {
     const cfg = await this.readJsonFile(CONFIG_PATH)
     const w = cfg.wallpaper || {}
@@ -698,6 +712,107 @@ function startLocalRpc(svc) {
   } catch (e) { console.error('[dsh-static] local rpc server failed: ' + ((e && e.message) || e)) }
 }
 
+// ===== 远程控制服务（手机 App，端口 3191）=====
+// 功能：配对码认证（6位）→ 手机发指令给电脑 agent 执行 → agent 把结果写 remote-reply.txt → 手机轮询读取；
+//       文件浏览/下载（找电脑文件传手机）。局域网直连 + Tailscale 跨网（WireGuard 加密，免费私密）。
+const RC_PORT = Number(process.env.DSH_REMOTE_PORT) || 3191
+let rcCode = ''
+let rcToken = ''
+let latestAgent = null
+function rcReplyFile() { return path.join(HOME, 'remote-reply.txt') }
+function rcInboxFile() { return path.join(HOME, 'remote-inbox.txt') }
+function rcJson(res, obj, code) {
+  res.writeHead(code || 200, { 'Content-Type': 'application/json' })
+  res.end(JSON.stringify(obj))
+}
+function rcListDir(dir) {
+  try {
+    const target = dir && String(dir).trim() ? dir : os.homedir()
+    const safe = path.resolve(target)
+    const entries = readdirSync(safe).map((name) => {
+      const full = path.join(safe, name)
+      let isDir = false, size = 0
+      try { const st = statSync(full); isDir = st.isDirectory(); size = st.size } catch (e) {}
+      return { name, path: full, isDir, size }
+    }).sort((a, b) => (b.isDir - a.isDir) || a.name.localeCompare(b.name))
+    return { ok: true, path: safe, entries }
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
+}
+function rcSendFile(res, file) {
+  try {
+    const safe = path.resolve(file || '')
+    const st = statSync(safe)
+    if (st.isDirectory()) return rcJson(res, { ok: false, error: '是目录' })
+    res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Length': st.size, 'Content-Disposition': 'attachment; filename*=UTF-8\'\'' + encodeURIComponent(path.basename(safe)) })
+    res.end(readFileSync(safe))
+  } catch (e) { return rcJson(res, { ok: false, error: String((e && e.message) || e) }, 404) }
+}
+function startRemoteControl(ctx) {
+  try {
+    rcCode = String(randomInt(100000, 999999))
+    const tokenFile = path.join(HOME, 'remote-token.json')
+    try { if (existsSync(tokenFile)) { rcToken = (JSON.parse(readFileSync(tokenFile, 'utf8')).token) || '' } } catch (e) {}
+    if (!rcToken) { rcToken = randomBytes(24).toString('hex'); try { writeFileSync(tokenFile, JSON.stringify({ token: rcToken })) } catch (e) {} }
+    ctx.on('agent/created', (carrier, ev) => { try { if (ev && ev.agent) latestAgent = ev.agent } catch (e) {} })
+    const server = createServer((req, res) => {
+      res.setHeader('Access-Control-Allow-Origin', '*')
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+      if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
+      const url = new URL(req.url, 'http://127.0.0.1')
+      const api = url.pathname
+      let body = ''
+      req.on('data', (c) => { body += c; if (body.length > 60e6) req.destroy() })
+      req.on('end', async () => {
+        let parsed = {}
+        try { parsed = body ? JSON.parse(body) : {} } catch (e) {}
+        const token = parsed.token || url.searchParams.get('token') || ''
+        try {
+          // 手机网页静态文件（PWA）：http://IP:3191/mobile
+          let staticPath = api
+          if (staticPath === '/mobile' || staticPath === '/mobile/') staticPath = '/mobile/index.html'
+          if (staticPath.indexOf('/mobile/') === 0) {
+            const rel = staticPath.slice('/mobile/'.length) || 'index.html'
+            const mime = rel.endsWith('.html') ? 'text/html; charset=utf-8' : rel.endsWith('.json') ? 'application/json' : rel.endsWith('.png') ? 'image/png' : 'application/octet-stream'
+            const file = path.join(PLUGIN_DIR, '..', 'mobile', 'web', rel)
+            if (existsSync(file) && !rel.includes('..')) { res.writeHead(200, { 'Content-Type': mime }); res.end(readFileSync(file)); return }
+            return rcJson(res, { ok: false, error: 'not found' }, 404)
+          }
+          if (api === '/api/status') return rcJson(res, { ok: true, version: '5.0.0', paired: !!rcCode })
+          if (api === '/api/pair') {
+            if (parsed.code === rcCode) return rcJson(res, { ok: true, token: rcToken })
+            return rcJson(res, { ok: false, error: '配对码错误' }, 401)
+          }
+          if (token !== rcToken || !rcToken) return rcJson(res, { ok: false, error: '未授权' }, 401)
+          if (api === '/api/chat/send') {
+            const text = String(parsed.text || '')
+            if (!text.trim()) return rcJson(res, { ok: false, error: '消息为空' })
+            writeFileSync(rcInboxFile(), text)
+            if (latestAgent && typeof latestAgent.inject === 'function') {
+              latestAgent.inject(createUserMessage({
+                content: [{ type: 'text', text: '【手机远程指令】' + text + '\n\n执行完成后，请把结果覆盖写入文件：' + rcReplyFile() + '（纯文本），手机端会读取该文件作为回复。' }],
+                source: { kind: 'plugin', plugin: 'dsh-client-static' }
+              }))
+              return rcJson(res, { ok: true, delivered: true })
+            }
+            return rcJson(res, { ok: true, delivered: false, error: '电脑端无活动会话，暂存于收件箱' })
+          }
+          if (api === '/api/chat/poll') {
+            let reply = ''
+            try { if (existsSync(rcReplyFile())) reply = readFileSync(rcReplyFile(), 'utf8') } catch (e) {}
+            return rcJson(res, { ok: true, reply })
+          }
+          if (api === '/api/files/list') return rcJson(res, rcListDir(parsed.path))
+          if (api === '/api/files/download') return rcSendFile(res, parsed.path)
+          return rcJson(res, { ok: false, error: 'unknown api: ' + api }, 404)
+        } catch (e) { return rcJson(res, { ok: false, error: String((e && e.message) || e) }, 500) }
+      })
+    })
+    server.listen(RC_PORT, '0.0.0.0')
+    console.log('[dsh-static] remote control server: http://0.0.0.0:' + RC_PORT + ' (pair code ready)')
+  } catch (e) { console.error('[dsh-static] remote control server failed: ' + ((e && e.message) || e)) }
+}
+
 // 自动续跑断点：新会话创建时，若 CURRENT_TASK.md 有未完成任务，注入提示，agent 汇报并等用户确认继续
 const CHECKPOINT_FILE = path.join('G:', 'dsh客户端', 'CURRENT_TASK.md')
 function applyCheckpointInjection(ctx) {
@@ -728,6 +843,7 @@ export function apply(ctx) {
     const svc = new DshClientFeaturesService(ctx)
     startLocalRpc(svc)
     applyCheckpointInjection(ctx)
+    startRemoteControl(ctx)
   } catch (e) {
     console.error('[dsh-static] apply FAILED: ' + ((e && e.stack) || e))
   }

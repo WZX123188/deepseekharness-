@@ -400,3 +400,29 @@ installer.nsh 快捷方式勾选页，说明.txt（UTF-8 BOM + 免责声明）�
 
 ## 使用方式
 - 以后长任务开始前，我会写 CURRENT_TASK.md；重启/卡死后新会话自动收到断点提示 → 你说「继续」→ 我读断点接着做。
+
+---
+
+# v4.0.0（2026-08-17，任务一收尾里程碑）
+
+- 视图（官网首页/密钥/模型回退）+ 拖拽附件（图标卡片/本地缓存路径/端口隔离）实测通过（真实 key 识图 + 附件缓存）。
+- git commit aedd100 + tag v4.0.0（大目录 desktop/dsh、test-env/home、BACKUP 等已 gitignore 排除，仅 26 个源码/文档文件）。
+- 便携版 `DeepSeekClient-portable-4.0.0-win-x64.zip`。
+- GitHub push 因网络不可达暂缓（push-release.ps1 待网络恢复执行）。
+
+---
+
+# v5.0.0（2026-08-17，手机远程 App）
+
+## 功能
+1. **电脑端远程服务（3191）**：配对码（6 位随机）+ token 认证；`/api/pair` `/api/chat/send` `/api/chat/poll` `/api/files/list` `/api/files/download` `/api/status`；`/mobile` 静态 PWA。监听 0.0.0.0 供局域网/隧道访问。
+2. **指令桥接**：手机发文字 → `latestAgent.inject` 注入电脑智能体 → 智能体执行后把结果写 `remote-reply.txt` → 手机 `/api/chat/poll` 轮询读取。
+3. **文件传输**：浏览目录 + 下载（电脑文件 → 手机 Download 目录）。
+4. **手机网页 PWA**（`mobile/web/index.html` 单文件）：配对页 + 指令 tab + 文件 tab，仿客户端风格，响应式。
+5. **安卓 APK**（`mobile/android/`）：WebView 包壳（内置 PWA + 下载 + 麦克风权限 + cleartext），GitHub Actions 云构建（`.github/workflows/build-apk.yml`，tag v5* 触发，自动签名 + 上传 release）。
+6. **免费私密隧道**：局域网直连 + Tailscale（WireGuard 加密，跨网），文档见 `mobile/README.md`。
+7. **客户端「手机远程」设置页**：显示配对码 + 本机 IP + 安装说明（getRemoteInfo RPC）。
+
+## 验证（test-env）
+- 远程服务启动（3195 端口隔离）；status/pair/files/list/chat/send/chat/poll 全通；`/mobile` 静态页 HTTP 200；getRemoteInfo 返回配对码+IP。
+- 同步 4 副本 + mobile 目录；打包 `DeepSeekClient-portable-5.0.0-win-x64.zip`。

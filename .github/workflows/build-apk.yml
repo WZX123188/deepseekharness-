@@ -1,0 +1,61 @@
+name: Build Android APK
+
+on:
+  push:
+    tags:
+      - 'v5*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Generate keystore (self-signed)
+        working-directory: mobile/android
+        run: |
+          keytool -genkeypair -v -keystore release.keystore -alias dshclient \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass dshclient2024 -keypass dshclient2024 \
+            -dname "CN=DSHClient, OU=Dev, O=DSH, L=City, S=State, C=CN"
+
+      - name: Build APK
+        working-directory: mobile/android
+        env:
+          KEYSTORE_FILE: release.keystore
+          KEYSTORE_PASSWORD: dshclient2024
+          KEY_ALIAS: dshclient
+          KEY_PASSWORD: dshclient2024
+        run: gradle assembleRelease --no-daemon
+
+      - name: Rename APK
+        working-directory: mobile/android
+        run: |
+          APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          cp "$APK" DSHClient-5.0.0.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSHClient-APK
+          path: mobile/android/DSHClient-5.0.0.apk
+
+      - name: Attach to Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: mobile/android/DSHClient-5.0.0.apk
