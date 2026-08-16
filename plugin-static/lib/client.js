@@ -22,7 +22,8 @@ window.__ModuleLoader__.load({
       direct("listProjects"), direct("createProject", [argsParam()]), direct("openFeedback", [argsParam()]),
       direct("getVisionStatus"), direct("setVisionKey", [argsParam()]), direct("clearVisionKey"), direct("testVision"), direct("seeImage", [argsParam()]), direct("openVisionSite"),
       direct("translateText", [argsParam()]), direct("translatePdf", [argsParam()]),
-      direct("translateOffice", [argsParam()]), direct("saveOffice", [argsParam()])
+      direct("translateOffice", [argsParam()]), direct("saveOffice", [argsParam()]),
+      direct("getWallpaper"), direct("setWallpaper", [argsParam()])
     ]
 
     var BLUE = "#4d6bfe"
@@ -371,6 +372,59 @@ window.__ModuleLoader__.load({
         }) : null)
     }
 
+    function applyWallpaperCss(mode, value) {
+      var id = "dsh-wallpaper-style"
+      var tag = document.getElementById(id)
+      if (!tag) { tag = document.createElement("style"); tag.id = id; document.head.appendChild(tag) }
+      if (!mode || !value) { tag.textContent = ""; return }
+      if (mode === "image") {
+        tag.textContent = ':root{--dsw-alias-bg-base:transparent!important;--dsw-alias-bg-elevated:rgba(255,255,255,.6)!important;--dsw-specific-input-major:rgba(255,255,255,.85)!important}html,body{background:#1a1a1a url(' + value + ') center/cover fixed no-repeat!important}'
+      } else {
+        tag.textContent = ':root{--dsw-alias-bg-base:' + value + '!important}html,body{background:' + value + '!important}'
+      }
+    }
+
+    function WallpaperSection() {
+      var st = React.useState({ mode: "", value: "" }); var state = st[0]; var setState = st[1]
+      var m = React.useState(""); var msg = m[0]; var setMsg = m[1]
+      function load() { callHost("getWallpaper").then(function (res) { if (res && res.ok) { setState({ mode: res.mode, value: res.value }); applyWallpaperCss(res.mode, res.value) } }) }
+      React.useEffect(function () { load() }, [])
+      function setWp(mode, value, label) {
+        callHost("setWallpaper", { mode: mode, value: value }).then(function (res) {
+          if (res && res.ok) { setState({ mode: res.mode, value: res.value }); applyWallpaperCss(res.mode, res.value); setMsg("已应用 " + (label || mode) + " ✓") }
+          else setMsg((res && res.error) || "设置失败")
+        })
+      }
+      function onImg(e) {
+        var f = e.target.files && e.target.files[0]
+        if (!f) return
+        var rd = new FileReader()
+        rd.onload = function () { setWp("image", rd.result, "自定义壁纸") }
+        rd.readAsDataURL(f)
+      }
+      var presets = [
+        { label: "默认", mode: "", value: "" },
+        { label: "浅灰白", mode: "color", value: "#f5f6f8" },
+        { label: "深色", mode: "color", value: "#14161a" },
+        { label: "雾蓝", mode: "color", value: "#eef2ff" },
+        { label: "蓝紫渐变", mode: "gradient", value: "linear-gradient(135deg,#eef2ff,#dbeafe)" },
+        { label: "深海渐变", mode: "gradient", value: "linear-gradient(135deg,#1e293b,#0f172a)" }
+      ]
+      return el("div", { className: "dsh-page" },
+        el("h2", { className: "dsh-h2" }, "界面背景"),
+        el("div", { className: "dsh-card" },
+          el("div", { className: "dsh-h2", style: { marginBottom: "10px" } }, "预设背景"),
+          el("div", { style: { display: "flex", gap: "8px", flexWrap: "wrap" } },
+            presets.map(function (p) {
+              return el("button", { key: p.label, className: "dsh-btn ghost", style: { background: p.value || "transparent" }, onClick: function () { setWp(p.mode, p.value, p.label) } }, p.label)
+            }))),
+        el("div", { className: "dsh-card", style: { marginTop: "12px" } },
+          el("div", { className: "dsh-h2", style: { marginBottom: "10px" } }, "自定义壁纸（上传图片，整页铺满）"),
+          el("input", { type: "file", accept: "image/*", onChange: onImg, className: "dsh-input" }),
+          el("div", { className: "dsh-muted", style: { marginTop: "8px" } }, "图片只保存在本机，随数据目录走；点「默认」恢复原始背景。")),
+        msg ? el("div", { className: "dsh-ok", style: { marginTop: "10px" } }, msg) : null)
+    }
+
     function ProjectsSection() {
       var p = React.useState({ status: "idle", items: null, error: null })
       var state = p[0]; var setState = p[1]
@@ -603,6 +657,9 @@ window.__ModuleLoader__.load({
       // 冒烟测试：主动调用一次 getPermissionMode，验证 RPC 打通（宿主侧会打印日志）
       try { callHost("getPermissionMode").then(function () {}) } catch (e) {}
 
+      // 启动时应用已保存的壁纸
+      try { callHost("getWallpaper").then(function (res) { if (res && res.ok) applyWallpaperCss(res.mode, res.value) }).catch(function () {}) } catch (e) {}
+
       if (typeof document !== "undefined" && document.querySelector("style[data-plugin-css=dsh-client-static]") === null) {
         var tag = document.createElement("style")
         tag.dataset.pluginCss = "dsh-client-static"
@@ -627,6 +684,7 @@ window.__ModuleLoader__.load({
       section("dsh-vision", 25, "视图模式", VisionSection)
       section("dsh-pdf", 26, "PDF 翻译", PdfSection)
       section("dsh-office", 27, "Office 翻译", OfficeSection)
+      section("dsh-wallpaper", 28, "界面背景", WallpaperSection)
 
       // 视图模式开关：放到首页对话框（输入框工具行左侧）
       ctx.slots.inject("conversation.input.left", function () {

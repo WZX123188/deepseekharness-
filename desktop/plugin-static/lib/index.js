@@ -2,8 +2,14 @@
 // 用 src-json 宽松编解码，免编译器。权限门仍由 dsh-client-gate 提供，这里不含。
 import os from 'node:os'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs'
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+
+// 本插件所在目录（用于定位 office.mjs 辅助脚本）
+const PLUGIN_DIR = path.dirname(fileURLToPath(import.meta.url))
+const OFFICE_MJS = path.join(PLUGIN_DIR, 'office.mjs')
+const JSZIP_ENTRY = () => path.join(pdfToolsNodeModules(), 'jszip', 'lib', 'index.js')
 
 // 数据落点：优先 DSH_HOME（客户端隔离），否则回退 ~/.dsh
 const HOME = process.env.DSH_HOME || path.join(os.homedir(), '.dsh')
@@ -421,6 +427,23 @@ export class DshClientFeaturesService extends TypertRemoteService {
     } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
   }
 
+  async getWallpaper() {
+    const cfg = await this.readJsonFile(CONFIG_PATH)
+    const w = cfg.wallpaper || {}
+    return { ok: true, mode: w.mode || '', value: w.value || '' }
+  }
+
+  async setWallpaper(args) {
+    const mode = args && args.mode
+    const value = args && args.value
+    if (mode !== 'color' && mode !== 'gradient' && mode !== 'image' && mode !== '') return { ok: false, error: '无效模式' }
+    const cfg = await this.readJsonFile(CONFIG_PATH)
+    if (mode === '') delete cfg.wallpaper
+    else cfg.wallpaper = { mode: mode, value: value || '' }
+    await this.writeJsonFile(CONFIG_PATH, cfg)
+    return { ok: true, mode: mode, value: value || '' }
+  }
+
   // DeepSeek 翻译（技术文档向，专业术语/引脚名保持原文）
   async translateText(args) {
     try {
@@ -491,6 +514,80 @@ export class DshClientFeaturesService extends TypertRemoteService {
         }
         try { for (let i = 1; i <= count; i++) unlinkSync(path.join(outDir, String(i) + '.png')) } catch (e) {}
         return { ok: true, pages: result, mode: 'scan' }
+      } finally {
+        try { unlinkSync(tmp) } catch (e) {}
+      }
+    } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
+  }
+
+  // 运行一个脚本文件（用于 office.mjs 等需要较大逻辑的辅助脚本）
+  async runNodeFile(file, args, env, graceMs) {
+    const subprocess = this.ctx.get('subprocess')
+    if (!subprocess) return { stdout: '', stderr: 'subprocess 不可用' }
+    const node = process.execPath
+    const handle = subprocess.spawn({ argv: [node, file].concat(args), cwd: HOME, stdio: { stdin: 'ignore', stdout: { maxBytes: 1048576 }, stderr: { maxBytes: 262144 } }, graceMs: graceMs || 120000, env: env || {} })
+    await handle.waitForExit()
+    const stdout = handle.collected.stdout ? handle.collected.stdout.readFrom(0).text : ''
+    const stderr = handle.collected.stderr ? handle.collected.stderr.readFrom(0).text : ''
+    return { stdout, stderr }
+  }
+
+  // Office 文档（docx/xlsx/pptx）全文翻译：提取→翻译→回填，返回预览块+译文文件 base64
+  async translateOffice(args) {
+    try {
+      const b64 = args && args.file
+      const filename = (args && args.filename) || 'document.docx'
+      if (typeof b64 !== 'string' || b64 === '') return { ok: false, error: '没有文件数据' }
+      const credentials = this.ctx.get('credentials')
+      const dsk = credentials ? await credentials.resolve('DEEPSEEK_API_KEY') : null
+      if (!dsk || typeof dsk.value !== 'string' || dsk.value === '') return { ok: false, error: '未配置 DeepSeek API Key' }
+      const raw = String(b64).replace(/^data:[^;]*;base64,/, '')
+      const tmp = path.join(os.tmpdir(), 'dsh-office-' + Date.now() + '-' + Math.floor(Math.random() * 1e6) + (path.extname(filename) || '.docx'))
+      writeFileSync(tmp, Buffer.from(raw, 'base64'))
+      try {
+        const jz = JSZIP_ENTRY()
+        const ext = await this.runNodeFile(OFFICE_MJS, ['extract', tmp, jz], {}, 120000)
+        const parsed = JSON.parse((ext.stdout || '').trim().split(/\r?\n/).filter(Boolean).pop() || '{"chunks":[]}')
+        const chunks = parsed.chunks || []
+        if (chunks.length === 0) return { ok: false, error: '未能从文档中提取到文本（可能是纯图片或空文档）' }
+        const translated = []
+        for (const c of chunks) {
+          const tr = await this.translateText({ text: c.text })
+          translated.push({ key: c.key, original: c.text, translated: tr.ok ? tr.text : '[翻译失败] ' + (tr.error || '') })
+        }
+        const chunksFile = tmp + '.chunks.json'
+        writeFileSync(chunksFile, JSON.stringify(translated))
+        const outName = '译文_' + path.basename(filename)
+        const pkg = await this.runNodeFile(OFFICE_MJS, ['package', tmp, jz, chunksFile, outName], {}, 180000)
+        const pkgParsed = JSON.parse((pkg.stdout || '').trim().split(/\r?\n/).filter(Boolean).pop() || '{}')
+        try { unlinkSync(chunksFile) } catch (e) {}
+        return { ok: true, chunks: translated, resultBase64: pkgParsed.base64 || '', outFilename: pkgParsed.outName || outName, type: parsed.type || 'docx' }
+      } finally {
+        try { unlinkSync(tmp) } catch (e) {}
+      }
+    } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
+  }
+
+  // 用用户审核/修改后的译文重新回填生成文件
+  async saveOffice(args) {
+    try {
+      const b64 = args && args.file
+      const filename = (args && args.filename) || 'document.docx'
+      const chunks = args && args.chunks
+      if (typeof b64 !== 'string' || b64 === '') return { ok: false, error: '没有文件数据' }
+      if (!Array.isArray(chunks)) return { ok: false, error: '没有译文数据' }
+      const raw = String(b64).replace(/^data:[^;]*;base64,/, '')
+      const tmp = path.join(os.tmpdir(), 'dsh-office-' + Date.now() + '-' + Math.floor(Math.random() * 1e6) + (path.extname(filename) || '.docx'))
+      writeFileSync(tmp, Buffer.from(raw, 'base64'))
+      try {
+        const jz = JSZIP_ENTRY()
+        const chunksFile = tmp + '.chunks.json'
+        writeFileSync(chunksFile, JSON.stringify(chunks.map((c) => ({ key: c.key, translated: c.translated }))))
+        const outName = '译文_' + path.basename(filename)
+        const pkg = await this.runNodeFile(OFFICE_MJS, ['package', tmp, jz, chunksFile, outName], {}, 180000)
+        const pkgParsed = JSON.parse((pkg.stdout || '').trim().split(/\r?\n/).filter(Boolean).pop() || '{}')
+        try { unlinkSync(chunksFile) } catch (e) {}
+        return { ok: true, resultBase64: pkgParsed.base64 || '', outFilename: pkgParsed.outName || outName }
       } finally {
         try { unlinkSync(tmp) } catch (e) {}
       }

@@ -427,6 +427,23 @@ export class DshClientFeaturesService extends TypertRemoteService {
     } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
   }
 
+  async getWallpaper() {
+    const cfg = await this.readJsonFile(CONFIG_PATH)
+    const w = cfg.wallpaper || {}
+    return { ok: true, mode: w.mode || '', value: w.value || '' }
+  }
+
+  async setWallpaper(args) {
+    const mode = args && args.mode
+    const value = args && args.value
+    if (mode !== 'color' && mode !== 'gradient' && mode !== 'image' && mode !== '') return { ok: false, error: '无效模式' }
+    const cfg = await this.readJsonFile(CONFIG_PATH)
+    if (mode === '') delete cfg.wallpaper
+    else cfg.wallpaper = { mode: mode, value: value || '' }
+    await this.writeJsonFile(CONFIG_PATH, cfg)
+    return { ok: true, mode: mode, value: value || '' }
+  }
+
   // DeepSeek 翻译（技术文档向，专业术语/引脚名保持原文）
   async translateText(args) {
     try {
