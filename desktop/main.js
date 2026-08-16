@@ -156,8 +156,11 @@ function ensureFeatures(cb) {
       fs.mkdirSync(profileDir, { recursive: true })
       fs.writeFileSync(pkgPath, JSON.stringify({ name: 'dsh-profile-web', private: true, dependencies: {}, dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'] } } }, null, 2))
     }
-    // 5) 挂载补丁：权限门 + 静态功能插件
-    fs.writeFileSync(path.join(profileDir, 'cordis.patch.yml'), '- insert:\n    - id: dsh-client-gate\n      name: dsh-client-gate\n    - id: dsh-client-static\n      name: dsh-client-static\n')
+    // 5) 挂载补丁：首次写基础补丁（权限门 + 静态插件）；之后由插件管理（含 MCP 市场条目），不覆盖
+    const patchPath = path.join(profileDir, 'cordis.patch.yml')
+    if (!fs.existsSync(patchPath)) {
+      fs.writeFileSync(patchPath, '- insert:\n    - id: dsh-client-gate\n      name: dsh-client-gate\n    - id: dsh-client-static\n      name: dsh-client-static\n')
+    }
     // 6) pnpm workspace（供后续 dsh plugin 安装外置插件用）
     const wsPath = path.join(profileDir, 'pnpm-workspace.yaml')
     if (!fs.existsSync(wsPath)) fs.writeFileSync(wsPath, 'packages:\n  - .\n\nnodeLinker: hoisted\nautoInstallPeers: false\n')

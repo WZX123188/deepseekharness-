@@ -2,6 +2,7 @@
 // 用 src-json 宽松编解码，免编译器。权限门仍由 dsh-client-gate 提供，这里不含。
 import os from 'node:os'
 import path from 'node:path'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 
 // 数据落点：优先 DSH_HOME（客户端隔离），否则回退 ~/.dsh
@@ -9,6 +10,8 @@ const HOME = process.env.DSH_HOME || path.join(os.homedir(), '.dsh')
 const CONFIG_PATH = path.join(HOME, 'dsh-client-config.json')
 const MARKET_PATH = path.join(HOME, 'dsh-market.json')
 const USAGE_PATH = path.join(HOME, 'dsh-client-usage.json')
+const MCP_DIR = path.join(HOME, 'mcp-tools')                       // 市场工具隔离安装目录（不碰全局 npm）
+const PROFILE_PATCH = path.join(HOME, 'profiles', 'web', 'cordis.patch.yml')
 
 // 视图模式：智谱 GLM-4V-Flash（免费国产视觉模型，OpenAI 兼容接口）
 const VISION_URL = 'https://open.bigmodel.cn/api/paas/v4/chat/completions'
@@ -81,6 +84,63 @@ export class DshClientFeaturesService extends TypertRemoteService {
     const stdout = handle.collected.stdout ? handle.collected.stdout.readFrom(0).text : ''
     const stderr = handle.collected.stderr ? handle.collected.stderr.readFrom(0).text : ''
     return { stdout, stderr }
+  }
+
+  // 用内置 Node + 内置 npm 装到隔离目录（不依赖系统全局 npm）
+  async runNpm(args, graceMs) {
+    const subprocess = this.ctx.get('subprocess')
+    if (!subprocess) return { stdout: '', stderr: 'subprocess 不可用' }
+    const node = process.execPath
+    const npmCli = path.join(path.dirname(node), 'node_modules', 'npm', 'bin', 'npm-cli.js')
+    if (existsSync(npmCli)) {
+      const handle = subprocess.spawn({ argv: [node, npmCli].concat(args), cwd: HOME, stdio: { stdin: 'ignore', stdout: { maxBytes: 524288 }, stderr: { maxBytes: 524288 } }, graceMs: graceMs || 240000, env: {} })
+      await handle.waitForExit()
+      const stdout = handle.collected.stdout ? handle.collected.stdout.readFrom(0).text : ''
+      const stderr = handle.collected.stderr ? handle.collected.stderr.readFrom(0).text : ''
+      return { stdout, stderr }
+    }
+    return this.runCmd(['npm'].concat(args), graceMs)
+  }
+
+  // 解析已安装 MCP 包的可执行入口（package.json 的 bin 字段）
+  resolveMcpBin(pkg) {
+    try {
+      const pj = path.join(MCP_DIR, 'node_modules', ...pkg.split('/'), 'package.json')
+      const manifest = JSON.parse(readFileSync(pj, 'utf8'))
+      const bin = manifest.bin
+      let rel = null
+      if (typeof bin === 'string') rel = bin
+      else if (bin && typeof bin === 'object') rel = bin[manifest.name] || Object.values(bin)[0]
+      if (!rel) return null
+      const abs = path.join(path.dirname(pj), rel)
+      return existsSync(abs) ? abs : null
+    } catch (e) { return null }
+  }
+
+  // 重建 cordis.patch.yml：权限门 + 静态插件 + 已启用的 mcp-client 条目（HMR 自动生效）
+  async rebuildMcpPatch() {
+    const market = await this.readJsonFile(MARKET_PATH)
+    const entries = []
+    const collect = (map, items) => {
+      for (const id of Object.keys(map || {})) {
+        if (!map[id]) continue
+        const item = this.findById(items, id)
+        if (!item) continue
+        const bin = this.resolveMcpBin(item.pkg)
+        if (!bin) continue
+        entries.push({ serverName: 'mcp-' + id, command: process.execPath, args: [bin] })
+      }
+    }
+    collect(market.tools, TOOLS)
+    collect(market.plugins, PLUGINS)
+    let y = '- insert:\n    - id: dsh-client-gate\n      name: dsh-client-gate\n    - id: dsh-client-static\n      name: dsh-client-static\n'
+    if (entries.length > 0) {
+      y += '- insert:\n'
+      for (const e of entries) {
+        y += '    - name: mcp-client\n      config:\n        transport: stdio\n        serverName: ' + e.serverName + '\n        command: ' + JSON.stringify(e.command) + '\n        args:\n          - ' + JSON.stringify(e.args[0]) + '\n        failOnStartupError: false\n'
+      }
+    }
+    writeFileSync(PROFILE_PATCH, y)
   }
 
   async readJsonFile(p) {
@@ -165,21 +225,30 @@ export class DshClientFeaturesService extends TypertRemoteService {
 
   async doUpdate() {
     try {
-      const { stdout, stderr } = await this.runCmd(['npm', 'install', '-g', PKG + '@latest'], 180000)
-      return { ok: true, stdout: stdout.slice(-4000), stderr: stderr.slice(-4000) }
+      // 独立客户端：不再 npm install -g（会污染全局）。打开 GitHub 发布页让用户下载新版安装包/便携版。
+      let url = 'https://github.com/' + FEEDBACK_REPO + '/releases'
+      try {
+        const h2 = await this.runNode(githubScript(), {}, 20000)
+        const glast = h2.stdout.trim().split(/\r?\n/).filter(Boolean).pop() || ''
+        const parsed = JSON.parse(glast)
+        if (parsed && parsed.html) url = parsed.html
+      } catch (e) {}
+      await this.runCmd(['start', '', url], 8000)
+      return { ok: true, stdout: '已在浏览器打开 GitHub 发布页，请下载新版安装包或便携版。', stderr: '' }
     } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
   }
 
   async listMarket(kind, items) {
     try {
-      const { stdout } = await this.runCmd(['npm', 'ls', '-g', '--depth=0', '--json'], 30000)
-      let installed = {}
-      try { installed = (JSON.parse(stdout) && JSON.parse(stdout).dependencies) || {} } catch (e) {}
+      const installed = {}
+      for (let i = 0; i < items.length; i++) {
+        if (existsSync(path.join(MCP_DIR, 'node_modules', ...items[i].pkg.split('/')))) installed[items[i].pkg] = true
+      }
       const market = await this.readJsonFile(MARKET_PATH)
       const plural = kind + 's'
       const stateMap = market[plural] || {}
       const list = items.map((t) => {
-        const isInst = Object.prototype.hasOwnProperty.call(installed, t.pkg)
+        const isInst = !!installed[t.pkg]
         return { id: t.id, name: t.name, category: t.category, desc: t.desc, note: t.note, pkg: t.pkg, config: t.config || '', installed: isInst, enabled: isInst && stateMap[t.id] !== false }
       })
       const order = []
@@ -200,30 +269,33 @@ export class DshClientFeaturesService extends TypertRemoteService {
     const item = this.findById(items, args && args.id) || this.findByPkg(items, args && args.pkg)
     if (item === null) return { ok: false, error: '未知条目' }
     if (action === 'install') {
-      const { stdout, stderr } = await this.runCmd(['npm', 'install', '-g', item.pkg], 180000)
+      const { stdout, stderr } = await this.runNpm(['install', '--prefix', MCP_DIR, '--registry', 'https://registry.npmmirror.com', '--no-audit', '--no-fund', item.pkg], 300000)
       const market = await this.readJsonFile(MARKET_PATH)
       const map = market[plural] || {}
       map[item.id] = true
       market[plural] = map
       await this.writeJsonFile(MARKET_PATH, market)
+      await this.rebuildMcpPatch()
       return { ok: true, pkg: item.pkg, stdout: stdout.slice(-2000), stderr: stderr.slice(-2000) }
     }
     if (action === 'uninstall') {
-      const { stdout, stderr } = await this.runCmd(['npm', 'uninstall', '-g', item.pkg], 180000)
+      const { stdout, stderr } = await this.runNpm(['uninstall', '--prefix', MCP_DIR, item.pkg], 180000)
       const market = await this.readJsonFile(MARKET_PATH)
       const map = market[plural] || {}
       delete map[item.id]
       market[plural] = map
       await this.writeJsonFile(MARKET_PATH, market)
+      await this.rebuildMcpPatch()
       return { ok: true, id: item.id, stdout: stdout.slice(-2000), stderr: stderr.slice(-2000) }
     }
-    // set-enabled
+    // set-enabled：真正挂载 / 卸载 MCP 服务器（写 cordis.patch.yml，HMR 自动生效）
     const enabled = !!(args && args.enabled)
     const market = await this.readJsonFile(MARKET_PATH)
     const map = market[plural] || {}
     map[item.id] = enabled
     market[plural] = map
     await this.writeJsonFile(MARKET_PATH, market)
+    await this.rebuildMcpPatch()
     return { ok: true, id: item.id, enabled }
   }
 

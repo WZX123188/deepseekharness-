@@ -47,7 +47,11 @@ window.__ModuleLoader__.load({
       ".dsh-configlink:hover{text-decoration:underline}",
       ".dsh-configbox{background:rgba(77,107,254,.08);border:1px solid rgba(77,107,254,.25);border-radius:8px;padding:8px 10px;font-size:12px;line-height:1.6;margin-top:6px;color:inherit}",
       ".dsh-input{background:transparent;border:1px solid rgba(127,127,127,.3);border-radius:8px;padding:8px 12px;color:inherit;font-size:13px;width:100%}",
-      ".dsh-select{background:transparent;border:1px solid rgba(127,127,127,.3);border-radius:8px;padding:6px 10px;color:inherit;font-size:13px}"
+      ".dsh-select{background:transparent;border:1px solid rgba(127,127,127,.3);border-radius:8px;padding:6px 10px;color:inherit;font-size:13px}",
+      ".dsh-vision-btn{position:relative;background:transparent;border:none;cursor:pointer;font-size:13px;color:inherit;padding:4px 8px;border-radius:8px;opacity:.82}",
+      ".dsh-vision-btn:hover{background:rgba(127,127,127,.14);opacity:1}",
+      ".dsh-vision-dot{position:absolute;top:3px;right:3px;width:6px;height:6px;border-radius:50%;background:#30a46c}",
+      ".dsh-vision-pop{position:absolute;bottom:44px;left:0;width:340px;max-height:62vh;overflow-y:auto;background:#fff;border:1px solid rgba(127,127,127,.2);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.25);padding:14px;z-index:1000;color:#333;text-align:left}"
     ].join("\n")
 
     function el(tag, props) {
@@ -141,8 +145,8 @@ window.__ModuleLoader__.load({
           el("div", { className: "dsh-card", style: { marginBottom: "12px" } },
             el("div", { className: "dsh-row" }, el("span", { className: "dsh-label" }, "当前版本"), el("span", { className: "dsh-value" }, official.current || "-")),
             el("div", { className: "dsh-row" }, el("span", { className: "dsh-label" }, "最新版本"), el("span", { className: "dsh-value" }, official.latest || "-")),
-            el("div", { style: { paddingTop: "12px" } }, official.hasUpdate ? el("button", { className: "dsh-btn", onClick: doUpdate, disabled: updating }, updating ? "更新中…" : "一键更新") : el("div", { className: "dsh-ok" }, "已是最新版本")),
-            el("div", { className: "dsh-muted", style: { marginTop: "8px" } }, "官方更新只更新核心程序，不影响你额外添加的功能。")),
+            el("div", { style: { paddingTop: "12px" } }, official.hasUpdate ? el("button", { className: "dsh-btn", onClick: doUpdate, disabled: updating }, updating ? "打开中…" : "去下载新版") : el("div", { className: "dsh-ok" }, "已是最新版本")),
+            el("div", { className: "dsh-muted", style: { marginTop: "8px" } }, "独立版已内置核心，更新请到 GitHub 发布页下载新版安装包 / 便携版。")),
           el("div", { className: "dsh-h2", style: { marginBottom: "8px" } }, "GitHub 更新"),
           el("div", { className: "dsh-card" },
             github.ok ? el("div", {},
@@ -150,7 +154,7 @@ window.__ModuleLoader__.load({
               el("div", { className: "dsh-row" }, el("span", { className: "dsh-label" }, "说明"), el("span", { className: "dsh-value" }, github.name || "-")),
               github.html ? el("a", { href: github.html, target: "_blank", rel: "noreferrer", className: "dsh-link", style: { display: "inline-block", marginTop: "8px" } }, "前往 GitHub 查看发布") : null)
               : github.noRelease ? el("div", { className: "dsh-muted" }, "GitHub 仓库还没有发布版本（Release）。") : el("div", { className: "dsh-err" }, "无法连接到 GitHub（网络不通）。")),
-          state.updated ? el("div", { className: "dsh-ok", style: { paddingTop: "8px" } }, "更新完成，请重启生效。") : null)
+          state.updated ? el("div", { className: "dsh-ok", style: { paddingTop: "8px" } }, "已打开 GitHub 发布页，请下载新版。") : null)
       }
       return el("div", { className: "dsh-page" },
         el("div", { className: "dsh-head" }, el("h2", { className: "dsh-h2" }, "检查更新"), el("button", { className: "dsh-btn ghost", onClick: check }, "重新检查")),
@@ -408,6 +412,71 @@ window.__ModuleLoader__.load({
             el("textarea", { value: result, readOnly: true, rows: 8, className: "dsh-input", onFocus: function (e) { e.target.select() } })) : null))
     }
 
+    function VisionInputButton() {
+      var op = React.useState(false); var isOpen = op[0]; var setOpen = op[1]
+      var st = React.useState({ configured: false }); var state = st[0]; var setState = st[1]
+      var k = React.useState(""); var key = k[0]; var setKey = k[1]
+      var m = React.useState(""); var msg = m[0]; var setMsg = m[1]
+      var b = React.useState(false); var busy = b[0]; var setBusy = b[1]
+      var im = React.useState(""); var image = im[0]; var setImage = im[1]
+      var rs = React.useState(""); var result = rs[0]; var setResult = rs[1]
+
+      function load() { callHost("getVisionStatus").then(function (res) { if (res && res.ok) setState({ configured: !!res.configured }) }).catch(function () {}) }
+      React.useEffect(function () { load() }, [])
+      function toggle() { var next = !isOpen; setOpen(next); if (next) load() }
+      function save() {
+        if (!key.trim()) { setMsg("请先粘贴智谱 API Key（sk- 开头）"); return }
+        setBusy(true)
+        callHost("setVisionKey", { key: key.trim() }).then(function (res) {
+          setBusy(false)
+          if (res && res.ok) { setMsg("已保存 ✓"); setKey(""); load() }
+          else setMsg((res && res.error) || "保存失败")
+        }).catch(function (e) { setBusy(false); setMsg(String((e && e.message) || e)) })
+      }
+      function test() {
+        setBusy(true); setMsg("测试中…")
+        callHost("testVision").then(function (res) {
+          setBusy(false); setMsg((res && res.ok) ? "连接成功 ✓" : ((res && res.error) || "测试失败"))
+        }).catch(function (e) { setBusy(false); setMsg(String((e && e.message) || e)) })
+      }
+      function goto() { callHost("openVisionSite").then(function () {}) }
+      function onFile(e) {
+        var f = e.target.files && e.target.files[0]
+        if (!f) return
+        var rd = new FileReader()
+        rd.onload = function () { setImage(rd.result); setResult("") }
+        rd.readAsDataURL(f)
+      }
+      function recognize() {
+        if (!image) { setMsg("请先选择一张图片"); return }
+        setBusy(true); setResult(""); setMsg("识别中…")
+        callHost("seeImage", { image: image }).then(function (res) {
+          setBusy(false)
+          if (res && res.ok) { setResult(res.text); setMsg("识别完成 ✓") }
+          else setMsg((res && res.error) || "识别失败")
+        }).catch(function (e) { setBusy(false); setMsg(String((e && e.message) || e)) })
+      }
+
+      var cfg = state.configured
+      return el("div", { style: { position: "relative" } },
+        el("button", { className: "dsh-vision-btn", onClick: toggle, title: cfg ? "识图（已启用）" : "识图（未配置）" }, "🖼 识图", cfg ? el("span", { className: "dsh-vision-dot" }) : null),
+        isOpen ? el("div", { className: "dsh-vision-pop" },
+          el("div", { className: "dsh-h2", style: { marginBottom: "8px" } }, "识图（视图模式）", el("span", { className: cfg ? "dsh-ok" : "dsh-muted", style: { marginLeft: "8px", fontSize: "12px" } }, cfg ? "已启用" : "未启用")),
+          cfg ? null : el("div", { className: "dsh-muted", style: { marginBottom: "8px" } }, "识别图片需要免费的智谱 GLM-4V-Flash 模型，请先领 Key："),
+          cfg ? null : el("button", { className: "dsh-btn ghost", onClick: goto, style: { marginBottom: "8px" } }, "🌐 去智谱官网申请免费 Key"),
+          el("div", { style: { display: "flex", gap: "6px", marginBottom: "8px" } },
+            el("input", { value: key, onChange: function (e) { setKey(e.target.value) }, placeholder: "粘贴 sk- 开头的 Key", className: "dsh-input", style: { flex: 1 } }),
+            el("button", { className: "dsh-btn", onClick: save, disabled: busy }, "保存"),
+            el("button", { className: "dsh-btn ghost", onClick: test, disabled: busy }, "测试")),
+          el("div", { className: "dsh-muted", style: { fontSize: "12px", marginBottom: "8px" } }, "图片 → 识别 → 结果可复制到对话框。"),
+          el("input", { type: "file", accept: "image/*", onChange: onFile, disabled: !cfg, className: "dsh-input", style: { marginBottom: "6px" } }),
+          image ? el("img", { src: image, style: { maxWidth: "100%", maxHeight: "160px", borderRadius: "8px", marginBottom: "6px", display: "block" } }) : null,
+          el("button", { className: "dsh-btn", onClick: recognize, disabled: !cfg || busy }, busy ? "识别中…" : "开始识别"),
+          msg ? el("div", { className: (msg.indexOf("成功") !== -1 || msg.indexOf("已保存") !== -1) ? "dsh-ok" : "dsh-err", style: { marginTop: "6px", fontSize: "12px" } }, msg) : null,
+          result ? el("div", { style: { marginTop: "8px" } }, el("textarea", { value: result, readOnly: true, rows: 5, className: "dsh-input", onFocus: function (e) { e.target.select() } })) : null
+        ) : null)
+    }
+
     async function apply(ctx) {
       await ctx.remote.$mount({ package: PKG, descriptors: DESCRIPTORS })
 
@@ -445,6 +514,14 @@ window.__ModuleLoader__.load({
       section("dsh-feedback", 46, "意见区", FeedbackSection)
       section("dsh-permission", 6, "权限", PermissionSection)
       section("dsh-vision", 25, "视图模式", VisionSection)
+
+      // 视图模式开关：放到首页对话框（输入框工具行左侧）
+      ctx.slots.inject("conversation.input.left", function () {
+        return ctx.slots.register(
+          { name: "conversation.input.left", id: "dsh-vision", order: 100, label: function () { return "识图" } },
+          function () { return React.createElement(VisionInputButton) }
+        )
+      })
     }
 
     exports.apply = apply
