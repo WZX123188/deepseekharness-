@@ -9,7 +9,8 @@ const path = require('path')
 
 // 必须先于 getPath('userData') 设置：强制界面中文 + 应用名（决定用户数据目录名）
 app.commandLine.appendSwitch('lang', 'zh-CN')
-app.setAppUserModelId('com.dsh.client')
+// 单实例锁 + 应用名：测试环境用 DSH_CLIENT_APP_ID 换一个 id，避免跟正在运行的正式客户端抢单实例锁。
+app.setAppUserModelId(process.env.DSH_CLIENT_APP_ID || 'com.dsh.client')
 app.setName('DeepSeekClient')
 
 // 资源根目录：打包后（app.isPackaged）用 extraResources 拷到 resources/，
@@ -33,7 +34,8 @@ const BUNDLED_NODE = path.join(APP_DIR, 'node', 'node.exe')
 const NODE = fs.existsSync(BUNDLED_NODE) ? BUNDLED_NODE : 'C:\\Program Files\\nodejs\\node.exe'
 const BUNDLED_DSH_BIN = path.join(APP_DIR, 'dsh-runtime', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
 
-const PORT = 3180
+// 端口：测试环境用 DSH_CLIENT_PORT 换端口（如 3190），避免跟正式客户端抢 3180。
+const PORT = Number(process.env.DSH_CLIENT_PORT) || 3180
 const BASE = 'http://127.0.0.1:' + PORT
 const MARKER = path.join(DSH_HOME, 'question-pending') // 权限询问置顶信号，隔离到本实例
 const ICON = path.join(APP_DIR, 'icon.ico')

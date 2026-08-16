@@ -27,3 +27,10 @@ dsh-market.json
 .env
 .env.*
 *.local
+
+# 隔离测试环境（运行时数据，不进 git）
+desktop/test-env/.dsh/
+desktop/test-env/app/
+desktop/test-env/out.log
+desktop/test-env/err.log
+desktop/test-env/pid.txt
