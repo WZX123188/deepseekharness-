@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "DSH 网页 PDF 实时翻译",
+  "version": "3.0.1",
+  "description": "在浏览器打开 PDF 时提供可关闭的悬浮翻译按钮：点击后逐页实时提取并翻译（边滑动边看译文）。翻译由本机 DeepSeekClient 完成（127.0.0.1:3190），API Key 不出本机。",
+  "permissions": ["storage"],
+  "host_permissions": ["http://127.0.0.1:3190/*", "<all_urls>"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*", "file://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ]
+}

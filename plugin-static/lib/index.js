@@ -2,6 +2,7 @@
 // 用 src-json 宽松编解码，免编译器。权限门仍由 dsh-client-gate 提供，这里不含。
 import os from 'node:os'
 import path from 'node:path'
+import http from 'node:http'
 import { fileURLToPath } from 'node:url'
 import { existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs'
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -453,6 +454,59 @@ export class DshClientFeaturesService extends TypertRemoteService {
     } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
   }
 
+  // 本地翻译服务（供浏览器 PDF 翻译扩展调用，端口 3190，仅本机）：
+  //   POST /translate { text, target? }            -> { text }
+  //   POST /pdf-probe { pdf: base64/dataURL }      -> pdfProbe 结果（文字版每页文本 / 扫描版每页图片）
+  //   POST /ocr { image, prompt? }                 -> seeImage 结果（扫描版 OCR）
+  // CORS 全放行；Key 不出本机：扩展只把数据发到 127.0.0.1:3190，翻译/识别全用本机已配置的 Key。
+  async startTranslateServer() {
+    try {
+      if (this._translateSrv) return
+      const srv = http.createServer((req, res) => {
+        res.setHeader('Access-Control-Allow-Origin', '*')
+        res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+        if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return }
+        const route = req.url || ''
+        if (req.method !== 'POST' || (route.indexOf('/translate') !== 0 && route.indexOf('/pdf-probe') !== 0 && route.indexOf('/ocr') !== 0)) {
+          res.writeHead(404); res.end(JSON.stringify({ error: 'not found' })); return
+        }
+        let body = ''
+        req.on('data', (c) => { body += c })
+        req.on('end', async () => {
+          try {
+            const parsed = JSON.parse(body || '{}')
+            if (route.indexOf('/translate') === 0) {
+              const text = parsed && parsed.text
+              if (typeof text !== 'string' || text.trim() === '') { res.writeHead(400); res.end(JSON.stringify({ error: 'no text' })); return }
+              const target = (parsed && parsed.target) || '中文'
+              const out = await this.translateText({ text, target })
+              res.writeHead(out.ok ? 200 : 502)
+              res.end(JSON.stringify(out.ok ? { text: out.text } : { error: out.error }))
+            } else if (route.indexOf('/pdf-probe') === 0) {
+              const out = await this.pdfProbe({ pdf: parsed && parsed.pdf })
+              res.writeHead(out.ok ? 200 : 502)
+              res.end(JSON.stringify(out))
+            } else {
+              const out = await this.seeImage({ image: parsed && parsed.image, prompt: parsed && parsed.prompt })
+              res.writeHead(out.ok ? 200 : 502)
+              res.end(JSON.stringify(out))
+            }
+          } catch (e) {
+            res.writeHead(500)
+            res.end(JSON.stringify({ error: String((e && e.message) || e) }))
+          }
+        })
+      })
+      srv.on('error', (e) => { console.log('[dsh-static] 3190 翻译服务: ' + ((e && e.message) || e)) })
+      srv.listen(3190, '127.0.0.1')
+      this._translateSrv = srv
+      console.log('[dsh-static] 本地翻译服务已启动 http://127.0.0.1:3190/translate')
+    } catch (e) {
+      console.log('[dsh-static] 翻译服务启动失败（忽略）: ' + ((e && e.message) || e))
+    }
+  }
+
   async getWallpaper() {
     const cfg = await this.readJsonFile(CONFIG_PATH)
     const w = cfg.wallpaper || {}
@@ -683,7 +737,8 @@ export class DshClientFeaturesService extends TypertRemoteService {
 
 export function apply(ctx) {
   try {
-    new DshClientFeaturesService(ctx)
+    const svc = new DshClientFeaturesService(ctx)
+    svc.startTranslateServer().catch(() => {})
   } catch (e) {
     console.error('[dsh-static] apply FAILED: ' + ((e && e.stack) || e))
   }
