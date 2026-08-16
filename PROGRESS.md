@@ -126,3 +126,39 @@ installer.nsh 快捷方式勾选页，说明.txt（UTF-8 BOM + 免责声明）�
 2. GitHub 推送：本地 v1.0.0 / v1.0.1 标签已打，远程未推；由用户用 PAT 执行
    `cd G:\dsh客户端; git push -u origin main --tags`。
 3. 用户验收各功能后，再重打包安装器（用户要求"先别打包"）。
+
+---
+
+## v2.0.0：完全独立 + 便携版（2026-08-16）
+
+用户朋友反馈「客户端是个套子」——装完后用户原有的网页版 DSH 也被改了。根因（三处全局污染，已修复）：
+
+1. 原来 spawn 的是**用户全局安装的** `%APPDATA%\npm\node_modules\@deepseek-ai\dsh`，没装还 `npm install -g`。
+2. 原来把插件写进用户的 `~\.dsh\profiles\web`。
+3. 原来直接改用户已装 DSH 内核源码 `dsh-cordis-host-runner/lib/index.js`。
+
+### 修复方案（已验证通过）
+
+- **内置 DSH 运行时**：`desktop/dsh-runtime/`（`npm install @deepseek-ai/dsh@0.1.0-rc.6`，245MB，gitignored 只留 package.json），打包为 extraResource。
+- **数据隔离**：spawn 内置 dsh 时设 `DSH_HOME` 环境变量（DSH 内核 `dsh-home-paths` 原生支持，优先级 显式配置 > `$DSH_HOME` > `~/.dsh`），数据全部落客户端自己的目录，绝不碰 `~/.dsh`。
+- **便携版**：`desktop/main.js` 探测 exe 同目录 `portable.dat` → 数据放 `<程序目录>\data\`；无标记（安装版）→ `%APPDATA%\DeepSeekClient`。便携模式还 `app.setPath('userData', ...)` 让 cookie/cache 也随便携目录走。
+- **权限门挂载修复**：v1.4.0 的 cordis.patch.yml 只挂了 dsh-client-static，漏了 dsh-client-gate（门禁根本没生效）。2.0.0 已把 gate + static 都挂载；`desktop/gate/` = 门禁新副本。
+- **置顶信号隔离**：marker 从 `%TEMP%\dsh-question-pending` 改为 `$DSH_HOME\question-pending`（gate 用 `node:fs` 直写，Electron 端轮询同路径，实例隔离）。
+
+### 产物
+
+- `desktop/release/DeepSeek-Client-Setup-2.0.0.exe`（安装版）
+- `desktop/release/DeepSeekClient-portable-2.0.0-win-x64.zip`（便携绿色版，`desktop/make-portable.ps1` 用 robocopy+7z 生成，脚本已加 BOM）
+
+### 验证
+
+- 内置 dsh `--version` = 0.1.0-rc.6 ✓
+- 隔离 `DSH_HOME` 下 `dsh web` 独立启动（HTTP 200），`~/.dsh` 无污染 ✓
+- gate + static 通过 cordis.patch.yml 挂载后无报错加载（进程 fail-loud 未退出）✓
+- `dsh-typert-protocol` 在捆绑闭包内，静态插件可解析 ✓
+
+### 下一步（待办）
+
+1. 用户验收（关旧客户端 → 跑新 win-unpacked / 便携 zip / 安装包）。
+2. 验收 OK → `git push -u origin main --tags`，发布 v2.0.0 Release（附两个安装包）。
+3. 后三个功能（视图模式 / PDF 实时翻译 / Word·PPT 拖拽翻译）——已给方案，待用户确认后开工。

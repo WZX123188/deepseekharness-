@@ -4,10 +4,11 @@ import os from 'node:os'
 import path from 'node:path'
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 
-const HOME = os.homedir()
-const CONFIG_PATH = path.join(HOME, '.dsh', 'dsh-client-config.json')
-const MARKET_PATH = path.join(HOME, '.dsh', 'dsh-market.json')
-const USAGE_PATH = path.join(HOME, '.dsh', 'dsh-client-usage.json')
+// 数据落点：优先 DSH_HOME（客户端隔离），否则回退 ~/.dsh
+const HOME = process.env.DSH_HOME || path.join(os.homedir(), '.dsh')
+const CONFIG_PATH = path.join(HOME, 'dsh-client-config.json')
+const MARKET_PATH = path.join(HOME, 'dsh-market.json')
+const USAGE_PATH = path.join(HOME, 'dsh-client-usage.json')
 
 const BALANCE_URL = 'https://api.deepseek.com/user/balance'
 const PKG = '@deepseek-ai/dsh'

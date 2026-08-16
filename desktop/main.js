@@ -1,4 +1,5 @@
-// Electron 主进程：原生客户端（图标/托盘/单实例/开机自启/全局热键/弹窗置顶）
+// Electron 主进程：完全独立的原生客户端
+// 关键：内置 DSH 运行时 + DSH_HOME 数据隔离，绝不触碰用户全局 npm 和 ~/.dsh。
 const { app, BrowserWindow, Tray, Menu, nativeImage, globalShortcut } = require('electron')
 const { spawn } = require('child_process')
 const http = require('http')
@@ -6,17 +7,35 @@ const fs = require('fs')
 const os = require('os')
 const path = require('path')
 
+// 必须先于 getPath('userData') 设置：强制界面中文 + 应用名（决定用户数据目录名）
+app.commandLine.appendSwitch('lang', 'zh-CN')
+app.setAppUserModelId('com.dsh.client')
+app.setName('DeepSeekClient')
+
 // 资源根目录：打包后（app.isPackaged）用 extraResources 拷到 resources/，
 // 开发模式（electron .）直接用 __dirname。spawn 必须用真实磁盘路径。
 const APP_DIR = app.isPackaged ? process.resourcesPath : __dirname
-// 优先用打包进去的 Node 运行时，缺失时回退到系统 Node
+// 可执行文件所在目录：便携模式下数据放在它下面；安装模式下只是用于探测 portable.dat。
+const EXE_DIR = app.isPackaged ? path.dirname(process.resourcesPath) : __dirname
+
+// ---- 数据目录与隔离 ----
+// 便携版（zip 绿色版）根目录带 portable.dat 标记，数据放 <程序目录>\data\，随文件夹走，可拷 U 盘。
+// 安装版无标记，数据放 %APPDATA%\DeepSeekClient（标准用户数据目录）。
+const PORTABLE_MARKER = path.join(EXE_DIR, 'portable.dat')
+const IS_PORTABLE = fs.existsSync(PORTABLE_MARKER)
+const DATA_DIR = IS_PORTABLE ? path.join(EXE_DIR, 'data') : app.getPath('userData')
+if (IS_PORTABLE) app.setPath('userData', DATA_DIR) // 让 cookie/cache/localStorage 也随便携目录走
+// DSH 的家目录：DSH 内核通过 DSH_HOME 环境变量决定数据落点，与用户 ~/.dsh 完全隔离。
+const DSH_HOME = path.join(DATA_DIR, '.dsh')
+
+// ---- 内置运行时 ----
 const BUNDLED_NODE = path.join(APP_DIR, 'node', 'node.exe')
 const NODE = fs.existsSync(BUNDLED_NODE) ? BUNDLED_NODE : 'C:\\Program Files\\nodejs\\node.exe'
-const DSH_BIN = path.join(process.env.APPDATA || 'C:\\Users\\WZX\\AppData\\Roaming', 'npm', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
-const NPM_CLI = path.join(APP_DIR, 'node', 'node_modules', 'npm', 'bin', 'npm-cli.js')
+const BUNDLED_DSH_BIN = path.join(APP_DIR, 'dsh-runtime', 'node_modules', '@deepseek-ai', 'dsh', 'lib', 'bin.js')
+
 const PORT = 3180
 const BASE = 'http://127.0.0.1:' + PORT
-const MARKER = path.join(os.tmpdir(), 'dsh-question-pending')
+const MARKER = path.join(DSH_HOME, 'question-pending') // 权限询问置顶信号，隔离到本实例
 const ICON = path.join(APP_DIR, 'icon.ico')
 
 let dshProc = null
@@ -25,10 +44,6 @@ let tray = null
 let quitting = false
 let autoPinned = false
 
-// 强制界面语言为中文（Electron/Chromium 默认 locale 是 en-US，否则界面会显示英文）
-app.commandLine.appendSwitch('lang', 'zh-CN')
-app.setAppUserModelId('com.dsh.client')
-app.setName('DeepSeekClient')
 // 开机自启（默认开启，托盘菜单可关）
 app.setLoginItemSettings({ openAtLogin: true })
 
@@ -41,12 +56,13 @@ function waitForServer(cb, tries) {
 }
 
 function startDsh() {
-  const logPath = path.join(app.getPath('userData'), 'dsh.log')
+  try { fs.mkdirSync(DATA_DIR, { recursive: true }) } catch (e) {}
+  const logPath = path.join(DATA_DIR, 'dsh.log')
   const logFd = fs.openSync(logPath, 'a')
-  dshProc = spawn(NODE, [DSH_BIN, 'web', '--port', String(PORT)], {
-    cwd: os.homedir(),
+  dshProc = spawn(NODE, [BUNDLED_DSH_BIN, 'web', '--port', String(PORT)], {
+    cwd: DATA_DIR,
     stdio: ['ignore', logFd, logFd],
-    env: process.env,
+    env: Object.assign({}, process.env, { DSH_HOME: DSH_HOME }),
     windowsHide: true,
   })
   dshProc.on('error', function (e) {
@@ -55,94 +71,61 @@ function startDsh() {
   dshProc.on('exit', function () { dshProc = null })
 }
 
-// 首次运行：若核心组件（DSH）未安装，用内置 Node/npm 自动安装（走国内镜像）
-function ensureDsh(cb) {
-  if (fs.existsSync(DSH_BIN)) return cb(null)
-  console.log('[dsh-client] 首次运行：正在安装核心组件（需联网，约 1-2 分钟）…')
-  let proc
-  try {
-    proc = spawn(NODE, [NPM_CLI, 'install', '-g', '@deepseek-ai/dsh', '--registry', 'https://registry.npmmirror.com'], {
-      cwd: os.homedir(),
-      stdio: 'ignore',
-      env: process.env,
-      windowsHide: true,
-    })
-  } catch (e) { return cb(e) }
-  proc.on('exit', function (code) {
-    if (code === 0 && fs.existsSync(DSH_BIN)) cb(null)
-    else cb(new Error('核心组件安装失败（code ' + code + '）'))
-  })
-  proc.on('error', function (e) { cb(e) })
+// 检查内置 DSH 运行时是否完整（打包时已随 app 一起装好，不再全局安装）
+function ensureRuntime(cb) {
+  if (fs.existsSync(BUNDLED_DSH_BIN)) return cb(null)
+  cb(new Error('内置 DSH 运行时缺失，安装包损坏：' + BUNDLED_DSH_BIN))
 }
 
-// 首次运行：把内置的功能插件装进用户 profile，并写挂载补丁
+function copyDir(src, dst) {
+  fs.mkdirSync(dst, { recursive: true })
+  const names = fs.readdirSync(src)
+  for (let i = 0; i < names.length; i++) {
+    const s = path.join(src, names[i])
+    const d = path.join(dst, names[i])
+    const st = fs.statSync(s)
+    if (st.isDirectory()) copyDir(s, d)
+    else fs.copyFileSync(s, d)
+  }
+}
+
+// 首次运行：把功能插件装进【隔离的】DSH_HOME，并写挂载补丁。绝不写 ~/.dsh。
 function ensureFeatures(cb) {
   try {
-    const home = process.env.USERPROFILE || 'C:\\Users\\WZX'
-    const profileDir = path.join(home, '.dsh', 'profiles', 'web')
-    const bootSrc = path.join(APP_DIR, 'boot')
-    const bootDst = path.join(profileDir, 'node_modules', 'dsh-client-boot')
-    fs.mkdirSync(bootDst, { recursive: true })
-    const files = ['package.json', 'index.js', 'host-body.js', 'client-body.js']
-    for (let i = 0; i < files.length; i++) {
-      const s = path.join(bootSrc, files[i])
-      if (fs.existsSync(s)) fs.copyFileSync(s, path.join(bootDst, files[i]))
-    }
-    // 静态客户端插件（宿主 RPC + 客户端 UI，免每次会话重载）：部署到 profile 的 node_modules
+    const profileDir = path.join(DSH_HOME, 'profiles', 'web')
+
+    // 1) 权限门（读取放行 / G盘放行 / 写改删需勾选同意）
+    const gateSrc = path.join(APP_DIR, 'gate')
+    if (fs.existsSync(gateSrc)) copyDir(gateSrc, path.join(profileDir, 'node_modules', 'dsh-client-gate'))
+
+    // 2) 静态功能插件（余额/用量/更新/市场/项目/意见区/使用指南 UI）
     const staticSrc = path.join(APP_DIR, 'plugin-static')
-    const staticDst = path.join(profileDir, 'node_modules', 'dsh-client-static')
-    if (fs.existsSync(staticSrc)) {
-      fs.mkdirSync(path.join(staticDst, 'lib'), { recursive: true })
-      const sFiles = ['package.json', 'lib/index.js', 'lib/client.js', 'lib/typert.host.js']
-      for (let i = 0; i < sFiles.length; i++) {
-        const s = path.join(staticSrc, sFiles[i])
-        if (fs.existsSync(s)) fs.copyFileSync(s, path.join(staticDst, sFiles[i]))
-      }
-    }
-    // 把「神奇小开关」preset 装进用户 agent-presets 根（纯配置文件，非插件）
+    if (fs.existsSync(staticSrc)) copyDir(staticSrc, path.join(profileDir, 'node_modules', 'dsh-client-static'))
+
+    // 3) 神奇小开关 preset 装进用户 agent-presets 根（纯配置文件，非插件）
     const presetsSrc = path.join(APP_DIR, 'presets')
-    const presetsDst = path.join(home, '.dsh', '.agent-presets')
+    const presetsDst = path.join(DSH_HOME, '.agent-presets')
     if (fs.existsSync(presetsSrc)) {
       const names = fs.readdirSync(presetsSrc)
       for (let i = 0; i < names.length; i++) {
         const srcDir = path.join(presetsSrc, names[i])
-        const dstDir = path.join(presetsDst, names[i])
         if (!fs.statSync(srcDir).isDirectory()) continue
-        fs.mkdirSync(dstDir, { recursive: true })
-        const pFiles = fs.readdirSync(srcDir)
-        for (let j = 0; j < pFiles.length; j++) {
-          const s = path.join(srcDir, pFiles[j])
-          if (fs.statSync(s).isFile()) fs.copyFileSync(s, path.join(dstDir, pFiles[j]))
-        }
+        copyDir(srcDir, path.join(presetsDst, names[i]))
       }
     }
+
+    // 4) profile 清单（与官方 initProfile 的 web 模板一致）
     const pkgPath = path.join(profileDir, 'package.json')
     if (!fs.existsSync(pkgPath)) {
       fs.mkdirSync(profileDir, { recursive: true })
       fs.writeFileSync(pkgPath, JSON.stringify({ name: 'dsh-profile-web', private: true, dependencies: {}, dsh: { profile: { bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-web-app'] } } }, null, 2))
     }
-    fs.writeFileSync(path.join(profileDir, 'cordis.patch.yml'), '- insert:\n    - id: dsh-client-static\n      name: dsh-client-static\n')
-    // 内核补丁（每次启动自动补回，防止 DSH 更新覆盖）：
-    // 1) runHostHalf 批准后清 requiresApproval —— 客户端半边免点同意自动加载
-    // 2) 成功时不再注入 "Cordis run ... completed successfully" 噪声 —— 避免它变成会话标题
-    try {
-      const runnerPath = path.join(home, '.dsh', 'profiles', 'node_modules', '@deepseek-ai', 'dsh-cordis-host-runner', 'lib', 'index.js')
-      if (fs.existsSync(runnerPath)) {
-        let s = fs.readFileSync(runnerPath, 'utf8')
-        let changed = false
-        const find1 = 'plan.plugin.clientVersionUpdatesApproved = true;'
-        if (!s.includes('attempt.requiresApproval = false;') && s.includes(find1)) {
-          s = s.replace(find1, find1 + '\n\t\t\t\t\tattempt.requiresApproval = false;')
-          changed = true
-        }
-        const re2 = /if \(settled\.ok\) text = [^;]*;/
-        if (!s.includes('if (settled.ok) return;') && re2.test(s)) {
-          s = s.replace(re2, 'if (settled.ok) return;')
-          changed = true
-        }
-        if (changed) fs.writeFileSync(runnerPath, s)
-      }
-    } catch (e) {}
+    // 5) 挂载补丁：权限门 + 静态功能插件
+    fs.writeFileSync(path.join(profileDir, 'cordis.patch.yml'), '- insert:\n    - id: dsh-client-gate\n      name: dsh-client-gate\n    - id: dsh-client-static\n      name: dsh-client-static\n')
+    // 6) pnpm workspace（供后续 dsh plugin 安装外置插件用）
+    const wsPath = path.join(profileDir, 'pnpm-workspace.yaml')
+    if (!fs.existsSync(wsPath)) fs.writeFileSync(wsPath, 'packages:\n  - .\n\nnodeLinker: hoisted\nautoInstallPeers: false\n')
+
     cb(null)
   } catch (e) { cb(e) }
 }
@@ -228,7 +211,7 @@ if (!gotLock) {
     try { fs.unlinkSync(MARKER) } catch (e) {}  // 清残留标记，防止启动即置顶
     createTray()
     try { globalShortcut.register('CommandOrControl+Alt+D', function () { toggleWin() }) } catch (e) {}
-    ensureDsh(function (err) {
+    ensureRuntime(function (err) {
       if (err) {
         console.error('[dsh-client] ' + (err && err.message || err))
         app.quit()

@@ -1,6 +1,11 @@
 # dependencies（仅应用自身的依赖目录，避免 542MB 进 git；内置 Node 运行时整目录由下方 desktop/node/ 管理）
 desktop/node_modules/
 
+# 内置 DSH 运行时（245MB，npm install 生成，不进 git；package.json 保留）
+desktop/dsh-runtime/node_modules/
+desktop/dsh-runtime/install.log
+desktop/dsh-runtime/package-lock.json
+
 # logs
 *.log
 
