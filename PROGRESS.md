@@ -244,3 +244,12 @@ installer.nsh 快捷方式勾选页，说明.txt（UTF-8 BOM + 免责声明）�
 - 版本 3.0.0 → 3.0.1。
 
 - 3.0.1 补丁：全局拖拽仅拦截 pdf/docx/xlsx/pptx 并保留聊天框原生图片暂存（拖照片→待发送→随文字一起发）；以后不再制作便携绿色版，只出安装包。
+
+## v3.0.1 附加：集成 @hunterchcl/dsh-usage-meter（实时计费插件）
+
+- 客户端没有 pnpm，`dsh plugin add` 不可用；改用内置 npm 手动装：
+  `node resources\node\node_modules\npm\bin\npm-cli.js install --prefix <DSH_HOME>\profiles\web @hunterchcl/dsh-usage-meter --registry https://registry.npmmirror.com --no-audit --no-fund --no-save`
+- 再把 `@hunterchcl/dsh-usage-meter` 加入 `profiles\web\package.json` 的 `dsh.profile.bundles` + `dependencies`，重启生效（bundle patch 合并其 cordis.patch.yml 自动挂载）。
+- 效果：会话顶部实时显示 DeepSeek 余额 + 本会话花费（峰谷计价可配），设置页「余额/用量」新增计价设置。
+- 浏览器 PDF 翻译扩展：`browser-extension/`（Edge/Chrome 开发者模式加载目录），配合本机 3190 翻译/解析/OCR 服务使用。
+- 手机远程 App 方案（PWA，待实现）：客户端起 0.0.0.0:3191 本地服务（配对码认证 + 聊天 SSE + 文件上传/下载），手机浏览器打开 `http://<电脑IP>:3191` 添加到主屏幕即像 App；可选内网穿透公网访问。
