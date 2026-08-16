@@ -162,3 +162,19 @@ installer.nsh 快捷方式勾选页，说明.txt（UTF-8 BOM + 免责声明）�
 1. 用户验收（关旧客户端 → 跑新 win-unpacked / 便携 zip / 安装包）。
 2. 验收 OK → `git push -u origin main --tags`，发布 v2.0.0 Release（附两个安装包）。
 3. 后三个功能（视图模式 / PDF 实时翻译 / Word·PPT 拖拽翻译）——已给方案，待用户确认后开工。
+
+---
+
+## v2.0.1：修复「点快捷方式打不开」（2026-08-16）
+
+- 启动立即弹「正在启动 DeepSeekClient…」加载页，不再黑屏干等（`LOADING_HTML` + `createWindow` 先加载页、后端就绪再 `loadApp()` 切真实界面）。
+- 启动前 `freePort()` 清掉残留「孤儿后端」：单实例下 3180 上的 node.exe 必是上次异常退出残留，用 `netstat`+`tasklist` 定位、仅杀 node.exe 再 `taskkill /F`，解决端口占用导致的打不开。
+- 版本 2.0.0 → 2.0.1，产物：`DeepSeek-Client-Setup-2.0.1.exe` + `DeepSeekClient-portable-2.0.1-win-x64.zip`。
+
+### 下一步
+
+1. 视图模式 2.1.0（智谱 GLM-4V-Flash，免费国产视觉模型）——待用户填 key。
+2. PDF 实时翻译 2.2.0（文字版+扫描版，精准翻数据手册）。
+3. Office 全家桶拖拽 2.2.1（Word/PPT/Excel + WPS，预览→审核→保存）。
+4. 视频剪辑（OBS/达芬奇）——方案待用户审核。
+5. 自定义界面背景。

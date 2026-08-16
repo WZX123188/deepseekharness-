@@ -1,7 +1,7 @@
 // Electron 主进程：完全独立的原生客户端
 // 关键：内置 DSH 运行时 + DSH_HOME 数据隔离，绝不触碰用户全局 npm 和 ~/.dsh。
 const { app, BrowserWindow, Tray, Menu, nativeImage, globalShortcut } = require('electron')
-const { spawn } = require('child_process')
+const { spawn, execFileSync } = require('child_process')
 const http = require('http')
 const fs = require('fs')
 const os = require('os')
@@ -38,6 +38,20 @@ const BASE = 'http://127.0.0.1:' + PORT
 const MARKER = path.join(DSH_HOME, 'question-pending') // 权限询问置顶信号，隔离到本实例
 const ICON = path.join(APP_DIR, 'icon.ico')
 
+// 启动加载页：启动后立即显示，避免「点了没反应 / 黑屏干等」
+const LOADING_HTML = [
+  '<!doctype html><html><head><meta charset="utf-8"><style>',
+  'html,body{margin:0;height:100%;background:#fff;color:#333;font-family:system-ui,"Microsoft YaHei",sans-serif;display:flex;align-items:center;justify-content:center}',
+  '.box{text-align:center}.t{font-size:18px;font-weight:600}',
+  '.s{margin-top:14px;color:#999;font-size:13px}',
+  '.dot{display:inline-block;width:8px;height:8px;margin:0 3px;border-radius:50%;background:#4a6cf7;animation:bl 1.2s infinite}',
+  '.dot:nth-child(2){animation-delay:.2s}.dot:nth-child(3){animation-delay:.4s}',
+  '@keyframes bl{0%,100%{opacity:.2}50%{opacity:1}}',
+  '</style></head><body><div class="box"><div class="t">正在启动 DeepSeekClient…</div>',
+  '<div class="s"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>',
+  '<div class="s">首次启动会初始化运行环境，请稍候</div></div></body></html>'
+].join('')
+
 let dshProc = null
 let win = null
 let tray = null
@@ -53,6 +67,28 @@ function waitForServer(cb, tries) {
   const req = http.get(BASE + '/', function (res) { res.resume(); cb(null) })
   req.on('error', function () { setTimeout(function () { waitForServer(cb, tries - 1) }, 500) })
   req.setTimeout(2000, function () { req.destroy() })
+}
+
+function sleepSync(ms) {
+  try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms) } catch (e) {}
+}
+
+// 启动前清掉上一次异常退出留下的「孤儿后端」：它可能还占着 3180 端口。
+// 本客户端是单实例，能走到这里说明没有别的正常实例在跑，3180 上的 node 必是残留。
+function freePort() {
+  try {
+    const re = new RegExp('TCP\\s+127\\.0\\.0\\.1:' + PORT + '\\s+[^\\s]+\\s+LISTENING\\s+(\\d+)', 'i')
+    const out = execFileSync('netstat', ['-ano', '-p', 'tcp'], { encoding: 'utf8', windowsHide: true, timeout: 5000 })
+    const m = out.match(re)
+    if (!m || !m[1]) return
+    const pid = parseInt(m[1], 10)
+    if (!pid || pid === process.pid) return
+    // 只杀 node.exe（dsh 后端），避免误杀占用同端口的其它程序
+    const tl = execFileSync('tasklist', ['/FI', 'PID eq ' + pid, '/FO', 'CSV', '/NH'], { encoding: 'utf8', windowsHide: true, timeout: 5000 })
+    if (!/node\.exe/i.test(tl)) return
+    try { execFileSync('taskkill', ['/F', '/PID', String(pid)], { windowsHide: true, timeout: 8000 }) } catch (e) {}
+    sleepSync(1200)  // 等端口释放
+  } catch (e) {}
 }
 
 function startDsh() {
@@ -153,11 +189,16 @@ function createWindow() {
       contextIsolation: true,
     },
   })
-  win.loadURL(BASE)
+  win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(LOADING_HTML))
   win.on('close', function (e) {
     if (!quitting) { e.preventDefault(); win.hide() }
   })
   win.on('closed', function () { win = null })
+}
+
+// 后端就绪后，把加载页切换成真正的界面
+function loadApp() {
+  if (win && !win.isDestroyed()) win.loadURL(BASE)
 }
 
 function refreshTrayMenu() {
@@ -211,6 +252,10 @@ if (!gotLock) {
     try { fs.unlinkSync(MARKER) } catch (e) {}  // 清残留标记，防止启动即置顶
     createTray()
     try { globalShortcut.register('CommandOrControl+Alt+D', function () { toggleWin() }) } catch (e) {}
+
+    createWindow()  // 立即显示「正在启动…」窗口，不再黑屏干等
+    freePort()      // 清掉残留后端，解决端口占用
+
     ensureRuntime(function (err) {
       if (err) {
         console.error('[dsh-client] ' + (err && err.message || err))
@@ -230,7 +275,7 @@ if (!gotLock) {
             app.quit()
             return
           }
-          createWindow()
+          loadApp()   // 后端就绪，切到真正的界面
           pollMarker()
         })
       })
