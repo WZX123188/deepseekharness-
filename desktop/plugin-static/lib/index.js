@@ -817,7 +817,8 @@ function startRemoteControl(ctx, svc) {
     const tokenFile = path.join(HOME, 'remote-token.json')
     try { if (existsSync(tokenFile)) { rcToken = (JSON.parse(readFileSync(tokenFile, 'utf8')).token) || '' } } catch (e) {}
     if (!rcToken) { rcToken = randomBytes(24).toString('hex'); try { writeFileSync(tokenFile, JSON.stringify({ token: rcToken })) } catch (e) {} }
-    ctx.on('agent/created', (carrier, ev) => { try { if (ev && ev.agent) latestAgent = ev.agent } catch (e) {} })
+    ctx.on('agent/created', ({ agent }) => { try { if (agent) latestAgent = agent } catch (e) {} })
+    ctx.on('agent/disposed', ({ agent }) => { try { if (agent && latestAgent === agent) latestAgent = null } catch (e) {} })
     const server = createServer((req, res) => {
       res.setHeader('Access-Control-Allow-Origin', '*')
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
@@ -842,7 +843,7 @@ function startRemoteControl(ctx, svc) {
             if (existsSync(file) && !rel.includes('..')) { res.writeHead(200, { 'Content-Type': mime }); res.end(readFileSync(file)); return }
             return rcJson(res, { ok: false, error: 'not found' }, 404)
           }
-          if (api === '/api/status') return rcJson(res, { ok: true, version: '5.0.0', paired: !!rcCode })
+          if (api === '/api/status') return rcJson(res, { ok: true, version: '5.3.2', paired: !!rcCode })
           if (api === '/api/pair') {
             if (parsed.code === rcCode) return rcJson(res, { ok: true, token: rcToken })
             return rcJson(res, { ok: false, error: '配对码错误' }, 401)
@@ -851,12 +852,13 @@ function startRemoteControl(ctx, svc) {
           if (api === '/api/chat/send') {
             const text = String(parsed.text || '')
             if (!text.trim()) return rcJson(res, { ok: false, error: '消息为空' })
-            // 多轮对话：手机消息作为普通用户消息注入活动 agent 会话（原文），agent 回复也留在会话里，
-            // 手机端通过 getChatMessages 读完整对话流，实现连续对话。
-            if (latestAgent && typeof latestAgent.inject === 'function') {
-              latestAgent.inject(createUserMessage({
+            // 多轮对话：手机消息作为普通用户消息唤醒活动 agent（followup 才会真正启动新的一轮处理，
+            // 旧代码用 inject 只是把消息塞进 next-step 队列且不唤醒，agent 永远不会主动处理），
+            // agent 回复也留在会话里，手机端通过 getChatMessages 读完整对话流，实现连续对话。
+            if (latestAgent && typeof latestAgent.followup === 'function') {
+              latestAgent.followup(createUserMessage({
                 content: [{ type: 'text', text: text }],
-                source: { kind: 'plugin', plugin: 'dsh-client-static' }
+                source: { kind: 'user' }
               }))
               return rcJson(res, { ok: true, delivered: true })
             }
@@ -891,10 +893,9 @@ function startRemoteControl(ctx, svc) {
 const CHECKPOINT_FILE = path.join('G:', 'dsh客户端', 'CURRENT_TASK.md')
 function applyCheckpointInjection(ctx) {
   try {
-    ctx.on('agent/created', (carrier, ev) => {
+    ctx.on('agent/created', ({ agent }) => {
       try {
-        const agent = ev && ev.agent
-        if (!agent || typeof agent.inject !== 'function') return
+        if (!agent || typeof agent.followup !== 'function') return
         if (!existsSync(CHECKPOINT_FILE)) return
         const raw = readFileSync(CHECKPOINT_FILE, 'utf8') || ''
         const text = raw.trim()
@@ -903,7 +904,7 @@ function applyCheckpointInjection(ctx) {
         if (/^#\s*状态[:：]\s*(无任务|已完成)/m.test(text)) return
         const lines = text.split('\n')
         const summary = lines.slice(0, 14).join('\n')
-        agent.inject(createUserMessage({
+        agent.followup(createUserMessage({
           content: [{ type: 'text', text: '【自动续跑检查】检测到上次任务断点（' + CHECKPOINT_FILE + '）：\n' + summary + '\n—— 请先向用户汇报断点内容；用户说「继续」时读取完整断点接着完成，否则先询问是否需要继续。' }],
           source: { kind: 'plugin', plugin: 'dsh-client-static' }
         }))
