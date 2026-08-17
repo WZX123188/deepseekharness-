@@ -68,6 +68,24 @@ a.dl{color:var(--blue);text-decoration:none;font-size:15px;padding:8px 4px}
 .wprow{display:flex;gap:8px;flex-wrap:wrap}
 .wpbtn{flex:1;min-width:80px;border-radius:10px;padding:14px 8px;border:1.5px solid var(--line);background:#fff;cursor:pointer;font-size:14px;min-height:44px}
 .wpbtn.on{border-color:var(--blue);color:var(--blue);font-weight:600}
+/* 思考过程 + 文件卡片 + 会话列表 */
+.msg.think{background:#f0f2f7;color:#8a919f;font-size:13px;font-style:italic;border:1px dashed var(--line);margin-right:auto;max-width:100%}
+.msg.think::before{content:"💭 思考中…";display:block;font-style:normal;font-weight:600;color:#8a919f;margin-bottom:4px}
+.filecard{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin:8px 0;display:flex;align-items:center;gap:12px}
+.filecard .fi{font-size:30px}
+.filecard .nm{flex:1;font-size:15px;word-break:break-all}
+.filecard .dl{background:var(--blue);color:#fff;border:none;border-radius:8px;padding:8px 14px;font-size:14px;cursor:pointer;flex:none}
+#sessionMask{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:100;display:none}
+#sessionPanel{position:fixed;left:0;top:0;bottom:0;width:82%;max-width:320px;background:var(--bg);z-index:101;display:flex;flex-direction:column;box-shadow:2px 0 12px rgba(0,0,0,.2)}
+#sessionPanel .hd{background:var(--blue);color:#fff;padding:14px;font-size:16px;font-weight:600;display:flex;justify-content:space-between;align-items:center;flex:none}
+#sessionList{flex:1;overflow-y:auto;padding:10px}
+.session-item{background:var(--card);border-radius:12px;padding:12px 14px;margin-bottom:8px;cursor:pointer}
+.session-item.on{border:1.5px solid var(--blue)}
+.session-item .t{font-size:15px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.session-item .m{font-size:12px;color:var(--muted);margin-top:2px}
+.thinkbar{padding:8px 14px;background:#f0f2f7;color:#8a919f;font-size:13px;text-align:center;flex:none;display:none}
+.thinkbar.on{display:block;animation:blink 1.2s infinite}
+@keyframes blink{0%,100%{opacity:.5}50%{opacity:1}}
 </style>
 </head>
 <body>
@@ -106,7 +124,7 @@ a.dl{color:var(--blue);text-decoration:none;font-size:15px;padding:8px 4px}
 
 <!-- 主界面 -->
 <div id="mainView" style="display:none;flex:1;flex-direction:column">
-  <header><h1>DSH 手机端</h1><span style="display:flex;gap:10px;align-items:center"><span id="connDot" style="font-size:12px;opacity:.85">已连接</span><button class="hbtn" onclick="switchServer()">切换</button></span></header>
+  <header><h1 style="cursor:pointer" onclick="showSessionList()">🗂 DSH 手机端</h1><span style="display:flex;gap:10px;align-items:center"><span id="connDot" style="font-size:12px;opacity:.85">已连接</span><button class="hbtn" onclick="switchServer()">切换</button></span></header>
   <div class="tabs">
     <button id="tabChat" class="on" onclick="showTab('chat')">💬 对话</button>
     <button id="tabFile" onclick="showTab('file')">📁 文件</button>
@@ -115,6 +133,7 @@ a.dl{color:var(--blue);text-decoration:none;font-size:15px;padding:8px 4px}
     <button id="tabSet" onclick="showTab('set')">⚙️ 设置</button>
   </div>
   <div id="chatView" style="flex:1;display:flex;flex-direction:column">
+    <div class="thinkbar" id="thinkbar">💭 电脑正在思考…</div>
     <main id="chatBox"></main>
     <div class="inputbar">
       <button class="iconbtn" onclick="$('upfile').click()" title="上传文件">📎</button>
@@ -182,12 +201,22 @@ a.dl{color:var(--blue);text-decoration:none;font-size:15px;padding:8px 4px}
   </div>
 </div>
 
+<!-- 会话列表（侧滑面板） -->
+<div id="sessionMask" onclick="hideSessionList()"></div>
+<div id="sessionPanel">
+  <div class="hd"><span>🗂 会话列表</span><button class="hbtn" onclick="hideSessionList()">✕</button></div>
+  <button class="bigbtn" style="margin:10px" onclick="newSession()">＋ 新建对话</button>
+  <div id="sessionList"></div>
+</div>
+
 <script>
 var server='', token='';
 var state = { path:'' };
 var voiceRec = null;
 var officeState = { file:'', filename:'', chunks:null, resultBase64:'', outFilename:'' };
 var marketKind = 'tool';
+var currentSessionId = null;
+var sessionsList = [];
 var CHAT_KEY = 'dsh_chat_history';
 function $(id){return document.getElementById(id)}
 
@@ -209,7 +238,7 @@ function load(){
   if(server && token){
     $('server').value=server;
     fetch('http://'+server+'/api/status',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
-      .then(function(r){return r.json()}).then(function(j){ if(j&&j.ok){ showMain(); restoreChatLocal(); refreshSettings(); refreshChat(false); } else showPair('连接失败，请重新输入'); })
+      .then(function(r){return r.json()}).then(function(j){ if(j&&j.ok){ showMain(); refreshSettings(); loadSessions(true); } else showPair('连接失败，请重新输入'); })
       .catch(function(){ showPair('无法连接 '+server+'，请重新输入地址和配对码'); });
   } else showPair('');
 }
@@ -220,7 +249,7 @@ function doPair(){
   fetch('http://'+server+'/api/pair',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:code})})
     .then(function(r){return r.json()})
     .then(function(j){
-      if(j&&j.ok&&j.token){ token=j.token; localStorage.setItem('dsh_server',server); localStorage.setItem('dsh_token',token); $('pairMsg').textContent=''; showMain(); restoreChatLocal(); refreshSettings(); refreshChat(false); }
+      if(j&&j.ok&&j.token){ token=j.token; localStorage.setItem('dsh_server',server); localStorage.setItem('dsh_token',token); $('pairMsg').textContent=''; showMain(); refreshSettings(); loadSessions(true); }
       else $('pairMsg').textContent='连接失败：'+(j&&j.error||'未知');
     }).catch(function(e){ $('pairMsg').textContent='无法连接：'+e.message });
 }
@@ -233,22 +262,67 @@ function showTab(t){
   if(t==='file') listDir('');
   if(t==='market') loadMarket();
 }
+// 渲染一条消息（user/assistant/thinking/file）
+function renderMsg(m){
+  if(m.role==='file'){
+    var f=document.createElement('div'); f.className='filecard';
+    f.innerHTML='<span class="fi">📄</span><span class="nm">'+esc(m.name)+'</span><a class="dl" href="http://'+server+'/api/files/download?token='+token+'&path='+encodeURIComponent(m.path)+'">下载</a>';
+    $('chatBox').appendChild(f); $('chatBox').scrollTop=$('chatBox').scrollHeight; return;
+  }
+  var cls = m.role==='user'?'me':(m.role==='thinking'?'think':'ai');
+  var d=document.createElement('div'); d.className='msg '+cls; d.textContent=m.text; $('chatBox').appendChild(d); $('chatBox').scrollTop=$('chatBox').scrollHeight;
+}
 function addMsg(text,cls){ var d=document.createElement('div'); d.className='msg '+cls; d.textContent=text; $('chatBox').appendChild(d); $('chatBox').scrollTop=$('chatBox').scrollHeight; }
 function addAi(t){ addMsg(t,'ai'); }
 
 // 历史持久化：localStorage 保存对话，刷新/重开/离线也能看到上次对话
 function saveChatLocal(msgs){ try{ localStorage.setItem(CHAT_KEY, JSON.stringify(msgs)); }catch(e){} }
 function loadChatLocal(){ try{ return JSON.parse(localStorage.getItem(CHAT_KEY)||'[]'); }catch(e){ return []; } }
-function restoreChatLocal(){ var local=loadChatLocal(); if(local.length){ $('chatBox').innerHTML=''; local.forEach(function(m){ addMsg(m.text, m.role==='user'?'me':'ai'); }); lastMsgCount = local.length; } }
+function restoreChatLocal(){ var local=loadChatLocal(); if(local.length){ $('chatBox').innerHTML=''; local.forEach(renderMsg); lastMsgCount = local.length; } }
 
-// 多轮对话：读电脑活动会话的完整消息流，本地渲染（user=我，assistant=AI）
+// ===== 会话管理（多会话历史 + 新建对话）=====
+function showSessionList(){ $('sessionMask').style.display='block'; $('sessionPanel').style.display='flex'; loadSessions(false); }
+function hideSessionList(){ $('sessionMask').style.display='none'; $('sessionPanel').style.display='none'; }
+function loadSessions(autoSelect){
+  rpc('listSessions').then(function(j){
+    if(!j||!j.ok){ if(autoSelect){ restoreChatLocal(); refreshChat(false); } $('sessionList').innerHTML='<div class="muted" style="padding:10px">加载失败</div>'; return; }
+    sessionsList = j.sessions || [];
+    if(autoSelect && sessionsList.length && !currentSessionId) currentSessionId = sessionsList[sessionsList.length-1].id;
+    var h='';
+    sessionsList.forEach(function(s){
+      var dot = s.status==='running' ? '<span style="color:#30a46c">🟢 运行中</span>' : '<span style="color:#8a919f">⚪ 空闲</span>';
+      h+='<div class="session-item'+(s.id===currentSessionId?' on':'')+'" onclick="selectSession(\''+s.id+'\')"><div class="t">'+esc(s.title)+'</div><div class="m">'+s.count+' 条消息 · '+dot+'</div></div>';
+    });
+    $('sessionList').innerHTML=h||'<div class="muted" style="padding:10px">暂无会话</div>';
+    if(autoSelect){ restoreChatLocal(); refreshChat(false); }
+  });
+}
+function selectSession(id){ currentSessionId=id; hideSessionList(); $('chatBox').innerHTML=''; lastMsgCount=0; refreshChat(false); }
+function newSession(){
+  rpc('createSession').then(function(j){
+    if(j&&j.ok&&j.id){ currentSessionId=j.id; hideSessionList(); $('chatBox').innerHTML=''; lastMsgCount=0; refreshChat(false); }
+    else alert((j&&j.error)||'新建失败');
+  });
+}
+// 手机收件箱：agent 发给手机的文件（显示为可下载卡片）
+function loadFiles(){
+  rpc('listPhoneInbox').then(function(j){
+    if(!j||!j.ok) return;
+    (j.files||[]).forEach(function(f){ renderMsg({role:'file', name:f.name, path:f.path}); });
+  });
+}
+
+// 多轮对话：按当前会话读消息流
 var lastMsgCount = 0;
+function fetchChat(){
+  return currentSessionId ? rpc('getSessionMessages',{sessionId:currentSessionId}) : rpc('getChatMessages');
+}
 function refreshChat(appendOnly){
-  rpc('getChatMessages').then(function(j){
+  fetchChat().then(function(j){
     if(!j||!j.ok) return;
     var msgs = j.messages || [];
-    if(!appendOnly){ $('chatBox').innerHTML=''; msgs.forEach(function(m){ addMsg(m.text, m.role==='user'?'me':'ai'); }); }
-    else { for(var i=lastMsgCount; i<msgs.length; i++) addMsg(msgs[i].text, msgs[i].role==='user'?'me':'ai'); }
+    if(!appendOnly){ $('chatBox').innerHTML=''; msgs.forEach(renderMsg); if(!currentSessionId) loadFiles(); }
+    else { for(var i=lastMsgCount; i<msgs.length; i++) renderMsg(msgs[i]); }
     lastMsgCount = msgs.length;
     saveChatLocal(msgs);
   });
@@ -256,18 +330,21 @@ function refreshChat(appendOnly){
 function sendMsg(){
   var t=$('input').value.trim(); if(!t) return;
   addMsg(t,'me'); $('input').value=''; lastMsgCount++;
-  api('/api/chat/send',{text:t}).then(function(j){ if(!j||!j.ok) addAi('发送失败：'+(j&&j.error||'')); pollChat(); });
+  var p = currentSessionId ? rpc('sendToSession',{sessionId:currentSessionId, text:t}) : api('/api/chat/send',{text:t});
+  p.then(function(j){ if(!j||!j.ok) addAi('发送失败：'+(j&&j.error||'')); pollChat(); });
 }
 var pollTimer=null;
 function pollChat(){
   clearInterval(pollTimer); var idle=0;
   pollTimer=setInterval(function(){
-    rpc('getChatMessages').then(function(j){
+    fetchChat().then(function(j){
       if(!j||!j.ok) return;
       var msgs = j.messages || [];
-      if(msgs.length > lastMsgCount){ for(var i=lastMsgCount;i<msgs.length;i++) addMsg(msgs[i].text, msgs[i].role==='user'?'me':'ai'); lastMsgCount=msgs.length; idle=0; saveChatLocal(msgs); }
+      if(msgs.length > lastMsgCount){ for(var i=lastMsgCount;i<msgs.length;i++) renderMsg(msgs[i]); lastMsgCount=msgs.length; idle=0; saveChatLocal(msgs); }
       else { idle++; if(idle>6) clearInterval(pollTimer); } // 连续无新消息约15秒后停
     });
+    // 思考中状态：agent running 且无新消息时显示提示
+    rpc('getAgentStatus').then(function(st){ $('thinkbar').className = (st&&st.ok&&st.status==='running') ? 'thinkbar on' : 'thinkbar'; });
   },2500);
 }
 

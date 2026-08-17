@@ -70,5 +70,13 @@ export const TYPERT = {
     direct('getRemoteInfo'),
     // v5.3.0 多轮对话：读取活动会话消息流
     direct('getChatMessages'),
+    // v5.5.0 多会话 + 发文件 + 思考同步
+    direct('listSessions'),
+    direct('createSession'),
+    direct('getSessionMessages', [argsParam()]),
+    direct('sendToSession', [argsParam()]),
+    direct('getAgentStatus'),
+    direct('listPhoneInbox'),
+    direct('pushFileToPhone', [argsParam()]),
   ],
 }

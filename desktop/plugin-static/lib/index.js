@@ -5,9 +5,11 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync, readdirSync, statSync } from 'node:fs'
 import { createServer } from 'node:http'
-import { randomBytes, randomInt } from 'node:crypto'
+import { randomBytes, randomInt, randomUUID } from 'node:crypto'
 import { TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
+import { installModelSelection } from '@deepseek-ai/dsh-agent'
+import { SessionId } from '@deepseek-ai/dsh-session'
 import { TYPERT } from './typert.host.js'
 
 // 本插件所在目录（用于定位 office.mjs 辅助脚本）
@@ -22,6 +24,8 @@ const MARKET_PATH = path.join(HOME, 'dsh-market.json')
 const USAGE_PATH = path.join(HOME, 'dsh-client-usage.json')
 const MCP_DIR = path.join(HOME, 'mcp-tools')                       // 市场工具隔离安装目录（不碰全局 npm）
 const PROFILE_PATCH = path.join(HOME, 'profiles', 'web', 'cordis.patch.yml')
+const PHONE_INBOX_DIR = path.join(HOME, 'phone-inbox')              // agent 发给手机的文件收件箱
+const PHONE_INBOX_INDEX = path.join(PHONE_INBOX_DIR, 'index.json')
 
 // 视图模式：智谱 GLM 视觉模型（免费国产视觉模型，OpenAI 兼容接口）
 const VISION_URL = 'https://open.bigmodel.cn/api/paas/v4/chat/completions'
@@ -540,7 +544,60 @@ export class DshClientFeaturesService extends TypertRemoteService {
     return { ok: true, port: RC_PORT, code: rcCode, ips }
   }
 
-  // 多轮对话：读取当前活动 agent 会话的消息流（用户消息 + 助手回复），供手机端展示完整对话
+  // 通用：把会话事件流转成手机端消息（user/assistant/thinking，手机消息去掉 📱 前缀）
+  extractMessages(events) {
+    const msgs = []
+    for (const ev of events) {
+      if (!ev || !ev.data) continue
+      if (ev.type === 'user/message') {
+        const parts = (ev.data && ev.data.content) || []
+        const txt = parts.filter((c) => c && c.type === 'text' && typeof c.text === 'string').map((c) => c.text).join(' ').trim()
+        if (!txt || txt.indexOf('【自动续跑检查】') === 0) continue
+        msgs.push({ role: 'user', text: txt.replace(/^📱\s*/, '') })
+      } else if (ev.type === 'assistant/message') {
+        // assistant/message 的 data 是 { message: {...} } 包裹；含 reasoning（思考）块和 text 块
+        const rec = ev.data || {}
+        const msg = rec.message || rec
+        const parts = (msg && msg.content) || []
+        const think = parts.filter((c) => c && c.type === 'reasoning' && typeof c.text === 'string').map((c) => c.text).join(' ').trim()
+        const txt = parts.filter((c) => c && c.type === 'text' && typeof c.text === 'string').map((c) => c.text).join(' ').trim()
+        if (think) msgs.push({ role: 'thinking', text: think })
+        if (txt) msgs.push({ role: 'assistant', text: txt })
+      }
+    }
+    return msgs
+  }
+
+  // 手机收件箱：agent 发给手机的文件清单（供聊天窗口显示可下载文件卡片）
+  listPhoneInbox() {
+    try {
+      let idx = []
+      try { idx = JSON.parse(readFileSync(PHONE_INBOX_INDEX, 'utf8')) } catch (e) {}
+      if (!Array.isArray(idx)) idx = []
+      return { ok: true, files: idx }
+    } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
+  }
+
+  // agent 推文件到手机收件箱（复制 + 记录 index.json）
+  pushFileToPhone(args) {
+    try {
+      const src = args && args.path
+      if (!src || !existsSync(src)) return { ok: false, error: '文件不存在：' + (src || '') }
+      const name = path.basename(src)
+      mkdirSync(PHONE_INBOX_DIR, { recursive: true })
+      const dst = path.join(PHONE_INBOX_DIR, name)
+      try { writeFileSync(dst, readFileSync(src)) } catch (e) { return { ok: false, error: '复制失败：' + String((e && e.message) || e) } }
+      let idx = []
+      try { idx = JSON.parse(readFileSync(PHONE_INBOX_INDEX, 'utf8')) } catch (e) {}
+      if (!Array.isArray(idx)) idx = []
+      idx = idx.filter((it) => it && it.name !== name)
+      idx.push({ name, path: dst, ts: Date.now() })
+      writeFileSync(PHONE_INBOX_INDEX, JSON.stringify(idx, null, 2))
+      return { ok: true, name, path: dst }
+    } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
+  }
+
+  // 多轮对话：读取当前活动会话消息流 + 手机收件箱文件
   async getChatMessages() {
     try {
       let events = []
@@ -557,23 +614,94 @@ export class DshClientFeaturesService extends TypertRemoteService {
           }
         } catch (e) {}
       }
-      const msgs = []
-      for (const ev of events) {
-        if (!ev || !ev.data) continue
-        // 注意：user/message 的 data 直接是消息对象；assistant/message 的 data 是 { message: {...}, ... } 包裹。
-        // 只取 type==='text' 的块，跳过 reasoning（思考）/tool-call 等，避免手机端显示思考过程。
-        const rec = ev.data || {}
-        const msg = ev.type === 'user/message' ? rec : (rec.message || rec)
-        const parts = (msg && msg.content) || []
-        const txt = parts.filter((c) => c && c.type === 'text' && typeof c.text === 'string').map((c) => c.text).join(' ').trim()
-        if (!txt) continue
-        if (ev.type === 'user/message') {
-          if (txt.indexOf('【自动续跑检查】') !== 0) msgs.push({ role: 'user', text: txt })
-        } else if (ev.type === 'assistant/message') {
-          msgs.push({ role: 'assistant', text: txt })
+      const messages = this.extractMessages(events)
+      const inbox = this.listPhoneInbox()
+      return { ok: true, messages, files: (inbox.ok ? inbox.files : []) }
+    } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
+  }
+
+  // 列出所有会话（手机端会话历史列表）
+  async listSessions() {
+    try {
+      const sessions = this.ctx.get('sessions')
+      const agents = this.ctx.get('agents')
+      const list = sessions && typeof sessions.list === 'function' ? sessions.list() : []
+      const items = list.map((s) => {
+        let title = '', ts = 0, status = 'idle'
+        const evs = s.events || []
+        if (evs.length) ts = (evs[0].time || 0)
+        for (const ev of evs) {
+          if (ev.type === 'user/message') {
+            const parts = (ev.data && ev.data.content) || []
+            const t = parts.filter((c) => c && c.type === 'text').map((c) => c.text).join(' ').trim().replace(/^📱\s*/, '')
+            if (t) { title = t; break }
+          }
         }
-      }
-      return { ok: true, messages: msgs }
+        try {
+          const a = agents && typeof agents.get === 'function' ? agents.get(s.id) : null
+          if (a && typeof a.status === 'string') status = a.status
+        } catch (e) {}
+        const count = evs.filter((e) => e.type === 'user/message' || e.type === 'assistant/message').length
+        return { id: s.id, title: title || '（新对话）', ts, count, status }
+      })
+      return { ok: true, sessions: items }
+    } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
+  }
+
+  // 创建新会话（复用电脑端当前模型选择）
+  async createSession() {
+    try {
+      const agents = this.ctx.get('agents')
+      if (!agents || typeof agents.create !== 'function') return { ok: false, error: 'agents 服务不可用' }
+      const defaultModel = this.ctx.get('agentDefaultModel')
+      const selection = defaultModel && typeof defaultModel.currentSelection === 'function' ? defaultModel.currentSelection() : null
+      const agentOptions = selection ? { provider: selection.provider, model: selection.model } : {}
+      const { agent } = await agents.create({
+        sessionId: SessionId('session-' + randomUUID()),
+        meta: { cwd: process.cwd() },
+        agentOptions,
+        setup: (agentCtx) => { if (selection) installModelSelection(agentCtx, { current: selection, assembled: void 0 }) }
+      })
+      if (agent) latestAgent = agent
+      return { ok: true, id: (agent && agent.session && agent.session.id) || '' }
+    } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
+  }
+
+  // 读取指定会话的消息
+  async getSessionMessages(args) {
+    try {
+      const id = args && args.sessionId
+      const sessions = this.ctx.get('sessions')
+      const s = sessions && typeof sessions.get === 'function' ? sessions.get(id) : null
+      if (!s || !s.events) return { ok: false, error: '会话不存在或已销毁' }
+      return { ok: true, messages: this.extractMessages(s.events) }
+    } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
+  }
+
+  // 发消息到指定会话（手机端选中哪个会话就发到哪个）
+  async sendToSession(args) {
+    try {
+      const id = args && args.sessionId
+      const text = args && args.text
+      if (!id || typeof text !== 'string' || !text.trim()) return { ok: false, error: '参数缺失' }
+      const agents = this.ctx.get('agents')
+      const agent = agents && typeof agents.get === 'function' ? agents.get(id) : null
+      if (!agent || typeof agent.followup !== 'function') return { ok: false, error: '会话不在活动状态' }
+      agent.followup(createUserMessage({
+        content: [{ type: 'text', text: '📱 ' + text.trim() }],
+        source: { kind: 'user' }
+      }))
+      latestAgent = agent
+      return { ok: true, delivered: true }
+    } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
+  }
+
+  // agent 状态（手机端「思考中」提示用）
+  async getAgentStatus() {
+    try {
+      let status = 'idle'
+      try { if (latestAgent && typeof latestAgent.status === 'string') status = latestAgent.status } catch (e) {}
+      return { ok: true, status, hasAgent: !!latestAgent }
     } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
   }
 
@@ -847,7 +975,7 @@ function startRemoteControl(ctx, svc) {
             if (existsSync(file) && !rel.includes('..')) { res.writeHead(200, { 'Content-Type': mime }); res.end(readFileSync(file)); return }
             return rcJson(res, { ok: false, error: 'not found' }, 404)
           }
-          if (api === '/api/status') return rcJson(res, { ok: true, version: '5.4.0', paired: !!rcCode })
+          if (api === '/api/status') return rcJson(res, { ok: true, version: '6.0.0', paired: !!rcCode })
           if (api === '/api/pair') {
             if (parsed.code === rcCode) return rcJson(res, { ok: true, token: rcToken })
             return rcJson(res, { ok: false, error: '配对码错误' }, 401)
@@ -861,7 +989,7 @@ function startRemoteControl(ctx, svc) {
             // agent 回复也留在会话里，手机端通过 getChatMessages 读完整对话流，实现连续对话。
             if (latestAgent && typeof latestAgent.followup === 'function') {
               latestAgent.followup(createUserMessage({
-                content: [{ type: 'text', text: text }],
+                content: [{ type: 'text', text: '📱 ' + text }],
                 source: { kind: 'user' }
               }))
               return rcJson(res, { ok: true, delivered: true })
@@ -949,13 +1077,18 @@ export function apply(ctx) {
     applyCheckpointInjection(ctx)
     startRemoteControl(ctx, svc)
     cleanupOldAttachments()
-    // agent 系统提示：拖入的文档附件缓存位置 + 回答前先读文件
+    // agent 系统提示：拖入的文档附件缓存位置 + 回答前先读文件 + 手机消息标记 + 发文件到手机的方式
     try {
       ctx.inject(["systemPrompt"], (scope) => {
         scope.systemPrompt.context({
           name: "dsh-attachments",
           order: 300,
           text: () => "用户拖入对话框的文档附件（docx/xlsx/pptx/pdf/txt 等）会缓存在 " + path.join(HOME, 'attachments') + " 目录，其中 index.json 的每个条目是 {name: 原始文件名, path: 本地路径}。当用户消息中出现「【附件】文件名」时，必须先读取该目录的 index.json，按 name 字段找到对应文件的 path，再用文件读取工具读取该文件内容，然后基于文件内容回答用户问题；不要凭空猜测文件内容，也不要把路径展示给用户。"
+        })
+        scope.systemPrompt.context({
+          name: "dsh-mobile",
+          order: 300,
+          text: () => "用户消息若以「📱」开头，表示这条消息来自手机端（用户人在外，通过手机 App 发送）。回复这类消息时请尽量简洁、分段清晰、适合手机小屏阅读。当用户要求「把某个文件发给我/发到手机」时，用文件系统工具把该文件复制到 " + PHONE_INBOX_DIR + " 目录，然后在 " + PHONE_INBOX_INDEX + " 的 JSON 数组里追加一条 {name:文件名, path:复制后的完整路径, ts:时间戳}（保留已有条目），手机端聊天窗口就会显示该文件的可下载卡片；不要用别的方式发送文件。"
         })
       })
     } catch (e) { console.error('[dsh-static] attachment prompt inject failed: ' + ((e && e.message) || e)) }

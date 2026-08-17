@@ -54,3 +54,6 @@ desktop/test-env/app/
 desktop/test-env/out.log
 desktop/test-env/err.log
 desktop/test-env/pid.txt
+
+# Tailscale APK 已上传 GitHub release，不入库
+mobile/tailscale-android.apk

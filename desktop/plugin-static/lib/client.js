@@ -29,6 +29,10 @@ window.__ModuleLoader__.load({
     ]
 
     var BLUE = "#4d6bfe"
+    // Tailscale 下载链接（组网工具）
+    var TAILSCALE_ANDROID = "https://github.com/WZX123188/deepseekharness-/releases/download/v5.4.0/tailscale-android.apk"
+    var TAILSCALE_IOS = "https://apps.apple.com/app/tailscale/id1475387142"
+    var TAILSCALE_WIN = "https://tailscale.com/download/windows"
     var CSS = [
       ".dsh-page{padding:20px;display:flex;flex-direction:column;gap:16px}",
       ".dsh-head{display:flex;justify-content:space-between;align-items:center}",
@@ -1564,7 +1568,16 @@ function makeQrMatrix(text) {
           el("div", { className: "dsh-note", style: { marginTop: "8px", lineHeight: "1.7" } }, "· 同一 WiFi：手机浏览器直接打开上面网址（局域网，私密）。" + "\n· 人在外：装 Tailscale 后，用 Tailscale 的 IP 替换网址里的 IP 即可（如 http://100.x.x.x:3191/mobile）。" + "\n· 手机浏览器/相机扫二维码可直接打开。")),
         el("div", { className: "dsh-card" },
           el("div", { className: "dsh-h2", style: { marginBottom: "8px" } }, "📥 手机端安装"),
-          el("div", { className: "dsh-muted", style: { lineHeight: "1.8" } }, "· 安卓：GitHub Release 下载 APK 安装（或直接用浏览器打开网址）。" + "\n· 苹果：Safari 打开网址 → 分享 → 添加到主屏幕。")))
+          el("div", { className: "dsh-muted", style: { lineHeight: "1.8" } }, "· 安卓：GitHub Release 下载 APK 安装（或直接用浏览器打开网址）。" + "\n· 苹果：Safari 打开网址 → 分享 → 添加到主屏幕。")),
+        el("div", { className: "dsh-card" },
+          el("div", { className: "dsh-h2", style: { marginBottom: "8px" } }, "🔐 Tailscale 组网工具下载"),
+          el("div", { className: "dsh-muted", style: { lineHeight: "2.2" } },
+            "· 安卓版：", el("a", { className: "dsh-link", href: TAILSCALE_ANDROID, target: "_blank", rel: "noreferrer" }, "下载 APK（GitHub）"),
+            el("div", { className: "dsh-note" }, "（国内可直连，装完登录同一账号即可组网）"),
+            "· 苹果版：", el("a", { className: "dsh-link", href: TAILSCALE_IOS, target: "_blank", rel: "noreferrer" }, "App Store 下载"),
+            el("div", { className: "dsh-note" }, "（或用手机浏览器打开 tailscale.com/download）"),
+            "· 电脑版：", el("a", { className: "dsh-link", href: TAILSCALE_WIN, target: "_blank", rel: "noreferrer" }, "tailscale.com 官网下载"),
+            el("div", { className: "dsh-note" }, "（Windows / macOS / Linux）"))))
     }
 
     function BalanceSection() {
