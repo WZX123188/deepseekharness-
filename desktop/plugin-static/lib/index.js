@@ -366,8 +366,7 @@ export class DshClientFeaturesService extends TypertRemoteService {
       const fullTitle = '[' + typeLabel + '] ' + title.trim()
       const bodyText = (typeof body === 'string' ? body : '') + '\n\n---\n（由 DSH 客户端意见区提交）'
       const url = 'https://github.com/' + FEEDBACK_REPO + '/issues/new?title=' + encodeURIComponent(fullTitle) + '&body=' + encodeURIComponent(bodyText) + '&labels=' + encodeURIComponent('反馈')
-      await this.runCmd(['start', '', url], 8000)
-      return { ok: true }
+      return { ok: true, url }
     } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
   }
 
@@ -822,6 +821,8 @@ function startRemoteControl(ctx, svc) {
     if (!rcToken) { rcToken = randomBytes(24).toString('hex'); try { writeFileSync(tokenFile, JSON.stringify({ token: rcToken })) } catch (e) {} }
     ctx.on('agent/created', ({ agent }) => { try { if (agent) latestAgent = agent } catch (e) {} })
     ctx.on('agent/disposed', ({ agent }) => { try { if (agent && latestAgent === agent) latestAgent = null } catch (e) {} })
+    // 多会话：跟踪「当前活动会话」——最近一次变 running 的 agent（用户在哪个会话发消息，手机就发到哪个会话）
+    ctx.on('agent/status', ({ agent, status }) => { try { if (agent && status === 'running') latestAgent = agent } catch (e) {} })
     const server = createServer((req, res) => {
       res.setHeader('Access-Control-Allow-Origin', '*')
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
@@ -846,7 +847,7 @@ function startRemoteControl(ctx, svc) {
             if (existsSync(file) && !rel.includes('..')) { res.writeHead(200, { 'Content-Type': mime }); res.end(readFileSync(file)); return }
             return rcJson(res, { ok: false, error: 'not found' }, 404)
           }
-          if (api === '/api/status') return rcJson(res, { ok: true, version: '5.3.3', paired: !!rcCode })
+          if (api === '/api/status') return rcJson(res, { ok: true, version: '5.4.0', paired: !!rcCode })
           if (api === '/api/pair') {
             if (parsed.code === rcCode) return rcJson(res, { ok: true, token: rcToken })
             return rcJson(res, { ok: false, error: '配对码错误' }, 401)

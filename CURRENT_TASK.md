@@ -2,41 +2,41 @@
 
 > 维护规则：开始长任务填写；每步更新；完成改状态「无任务 / 已完成」。新会话自动读本文件。
 
-## 状态：进行中（v5.3.3 手机收不到回复 + 布局固定 + 完全态增强）
+## 状态：进行中（v5.4.0 完全态 app —— 待用户重启实测）
 
-### 本次修复（v5.3.3）
-- **手机收不到回复**：根因 `getChatMessages` 解析 `assistant/message` 事件时用 `ev.data.content`，但该事件的
-  data 是 `{ message: {...} }` 包裹（dsh-session 里 `user/message` 用 `record`、其余用 `record.message`），
-  导致 assistant 文本取不到被过滤。改为 `rec.message || rec`，且只取 `type==='text'` 块（过滤 reasoning 思考/tool-call）。
-- **手机端布局固定**：顶部 tab（对话/文件/设置）+ 底部输入框固定，长文本只在中间内容区滚动。
-  改法：`html,body{overflow:hidden}` + `body{height:100vh;100dvh}` + 各 flex 容器 `min-height:0` + `main` 滚动。
-- **完全态增强**：手机设置页「🔌 连接」卡片显示电脑地址列表（Tailscale 100.x / 局域网 IP，点一下复制），
-  用 `getRemoteInfo` 的 ips + port。
+### 本次完成（v5.4.0 待办全清）
+- **App 图标小蓝鲸**：从 desktop\icon.ico（内嵌 32bpp DIB 225x225）解析 → 双线性缩放生成 mipmap 5 尺寸（48/72/96/144/192），
+  AndroidManifest `@mipmap/ic_launcher`，build.gradle versionCode 6 / versionName 5.3.3→(随 v5.4.0 打包)。
+- **电脑端二维码**：把 qrcode-terminal 的 vendor（qrcode-generator, MIT）合并成浏览器自包含 `makeQrMatrix`（已与原始 vendor 交叉验证 cells 完全一致），
+  RemoteSection「连接网址」每个 IP 显示 canvas 二维码 + URL + 复制按钮。
+- **手机端完全态**：tab 从 3 个扩到 5 个（对话/文件/翻译/市场/设置）：
+  - 翻译 tab：PDF 翻译（translatePdf）+ Office 翻译（translateOffice/saveOffice，可逐段改译文下载）。
+  - 市场 tab：Tool/Plugin 市场（listTools/listPlugins + 安装/启用/禁用/卸载）。
+  - 设置页新增：电脑界面背景（getWallpaper/setWallpaper 预设+自定义图）、意见区（openFeedback 返回 url 后 window.open）、使用指南（静态）。
+  - 历史持久化：getChatMessages 结果存 localStorage，重开/离线先恢复上次对话。
+- **多会话活动会话**：host 加 `ctx.on('agent/status', ({agent,status}) => status==='running' 时 latestAgent=agent)`，
+  手机消息发到「最近活动」的会话而非仅最新创建的 agent。
+- **openFeedback 改为返回 url**（不再 runCmd 打开电脑浏览器），desktop/手机两端各自 window.open。
 
 ### 已改文件（已同步）
-- plugin-static/lib/index.js（getChatMessages 解析 + /api/status 5.3.3）—— resources / desktop\plugin-static / 正式 profile 三处
-- mobile/web/index.html（CSS 布局 + 电脑地址）—— mobile\web 源 / resources\plugin-static\mobile\web / desktop\plugin-static\mobile\web / 正式 profile 四处
-- desktop/package.json 版本 5.3.3
+- plugin-static/lib/index.js（agent/status 跟踪 + openFeedback 返回 url + /api/status 5.4.0）—— 三处
+- plugin-static/lib/client.js（makeQrMatrix + QrBox + RemoteSection 二维码）—— 三处
+- mobile/web/index.html（完全态 5 tab）—— mobile\web 源 + resources/desktop/profile 三处 + 安卓 assets
+- mobile/android（mipmap 图标 + AndroidManifest + build.gradle）
+- desktop/package.json 版本 5.4.0
 
 ### 已验证
-- node --check 通过；解析单测 PASS（assistant data.message 包裹 + reasoning 过滤 + 旧结构兼容 + tool/result 忽略）
-- test-env（3197/3193/3195）：插件加载正常、/mobile 含新标记(100dvh/loadRemoteInfo/addrList)、getChatMessages/getRemoteInfo 端点正常
+- 全部 node --check 通过；makeQrMatrix 与 vendor 交叉验证一致；PNG 解码验证（中心色 #4D6BFE 正确）
+- test-env：listTools（完整市场分类）、getWallpaper/setWallpaper、openFeedback（返回 url）、getRemoteInfo、listProjects 全通
 
 ### 待办（本任务收尾）
-- [x] 打包（--win --dir + make-portable，release 保留 5.3.2/5.3.3）
-- [x] git commit + tag v5.3.3 + push（8920d07 + 0438509 同步安卓 assets）
-- [x] 触发 APK 重新构建（workflow_dispatch @ main）
-- [ ] 用户重启桌面端后实测：手机能收到回复、顶部/底部固定、设置页能看到电脑地址；APK 构建完成后装新版
-
-### 后续需求（下次继续，举一反三）
-- App 图标换小蓝鲸（ico→png + mipmap）
-- 手机端补充：意见区、使用指南、市场、壁纸、PDF/Office 翻译
-- 二维码扫码直连
-- 手机端历史消息持久化（本地 localStorage 保存对话）
-- （可选）多会话时让手机消息发到「当前活动会话」而非仅最新创建的 agent
+- [x] 打包（--win --dir + make-portable，release 保留 5.3.3/5.4.0）
+- [ ] git commit + tag v5.4.0 + push
+- [ ] 触发 APK 构建（tag v5.4.0 会自动触发 build-apk.yml）
+- [ ] 用户重启桌面端 + 手机刷新/装新 APK 实测
 
 ### 关键信息
 - Tailscale：电脑已登录，IP 100.120.241.23；手机需装 Tailscale 登录同账号
-- 手机连电脑：网页 http://<IP>:3191/mobile 或 APK；配对码在客户端「手机远程」页
+- 手机连电脑：网页 http://<IP>:3191/mobile 或 APK；配对码/二维码在电脑端「手机远程」页
 - 手机 RPC 走 3191 /api/rpc（带 token）；3192 仅本机
 - 正式实例端口：3180（web）/ 3192（本地RPC）/ 3191（手机远程）

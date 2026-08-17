@@ -15,16 +15,20 @@ header{background:var(--blue);color:#fff;padding:12px 14px;display:flex;align-it
 header h1{font-size:17px;margin:0;font-weight:600}
 .hbtn{background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:8px;padding:7px 14px;font-size:14px;cursor:pointer}
 .tabs{display:flex;background:var(--card);border-bottom:1px solid var(--line);flex:none}
-.tabs button{flex:1;padding:14px;border:none;background:none;font-size:16px;color:var(--muted);border-bottom:2px solid transparent;cursor:pointer;min-height:48px}
+.tabs button{flex:1;padding:12px 4px;border:none;background:none;font-size:14px;color:var(--muted);border-bottom:2px solid transparent;cursor:pointer;min-height:48px}
 .tabs button.on{color:var(--blue);border-bottom-color:var(--blue);font-weight:600}
+.subtabs{display:flex;background:var(--card);border-bottom:1px solid var(--line);flex:none}
+.subtabs button{flex:1;padding:10px;border:none;background:none;font-size:15px;color:var(--muted);border-bottom:2px solid transparent;cursor:pointer;min-height:44px}
+.subtabs button.on{color:var(--blue);border-bottom-color:var(--blue);font-weight:600}
 main{flex:1;overflow-y:auto;padding:14px;min-height:0;-webkit-overflow-scrolling:touch}
 /* 主界面各层 flex 容器：min-height:0 让内容区正确收缩、内部滚动，顶部/底部固定不随长文本撑开 */
-#mainView,#chatView,#fileView,#setView{min-height:0}
+#mainView,#chatView,#fileView,#setView,#transView,#marketView{min-height:0}
 .card{background:var(--card);border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
 .muted{color:var(--muted);font-size:14px;line-height:1.6}
 h2{font-size:17px;margin:0 0 10px;font-weight:600}
 h3{font-size:15px;margin:14px 0 6px;font-weight:600}
 input,textarea{width:100%;padding:13px 14px;border:1px solid var(--line);border-radius:12px;font-size:16px;font-family:inherit;margin-top:8px;min-height:48px}
+select{width:100%;padding:12px 14px;border:1px solid var(--line);border-radius:12px;font-size:16px;font-family:inherit;margin-top:8px;min-height:48px;background:#fff}
 .bigbtn{background:var(--blue);color:#fff;border:none;border-radius:12px;padding:14px;font-size:17px;cursor:pointer;width:100%;margin-top:12px;min-height:52px;font-weight:600}
 .bigbtn.ghost{background:#fff;color:var(--blue);border:1.5px solid var(--blue)}
 .msg{padding:12px 14px;border-radius:14px;margin:8px 0;max-width:88%;font-size:16px;line-height:1.55;white-space:pre-wrap;word-break:break-word}
@@ -49,6 +53,21 @@ a.dl{color:var(--blue);text-decoration:none;font-size:15px;padding:8px 4px}
 .row{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--line);font-size:15px}
 .row .lbl{color:var(--muted)}
 .row .val{font-weight:600;font-variant-numeric:tabular-nums}
+.transpg{background:var(--card);border-radius:14px;padding:14px;margin-bottom:12px}
+.transpg .lbl{font-size:12px;color:var(--muted);margin-bottom:4px}
+.transpg .orig{white-space:pre-wrap;font-size:12px;color:var(--muted);line-height:1.6;background:#f7f8fa;padding:8px;border-radius:8px;margin-bottom:8px;word-break:break-word}
+.transpg .tr{white-space:pre-wrap;font-size:14px;line-height:1.7;word-break:break-word}
+.market-item{background:var(--card);border-radius:12px;padding:12px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.market-item .nm{font-size:15px;font-weight:600}
+.market-item .dc{font-size:13px;color:var(--muted);line-height:1.5;margin:2px 0}
+.market-item .pk{font-size:11px;color:var(--muted);opacity:.7}
+.market-acts{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+.minibtn{background:var(--blue);color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:14px;cursor:pointer}
+.minibtn.ghost{background:#fff;color:var(--blue);border:1px solid var(--blue)}
+.minibtn:disabled{opacity:.5}
+.wprow{display:flex;gap:8px;flex-wrap:wrap}
+.wpbtn{flex:1;min-width:80px;border-radius:10px;padding:14px 8px;border:1.5px solid var(--line);background:#fff;cursor:pointer;font-size:14px;min-height:44px}
+.wpbtn.on{border-color:var(--blue);color:var(--blue);font-weight:600}
 </style>
 </head>
 <body>
@@ -66,7 +85,7 @@ a.dl{color:var(--blue);text-decoration:none;font-size:15px;padding:8px 4px}
     <div class="step"><div class="num">1</div><div class="txt"><b>电脑装 Tailscale</b>去 tailscale.com 下载 Windows 版安装，注册并登录账号。</div></div>
     <div class="step"><div class="num">2</div><div class="txt"><b>手机装 Tailscale</b>应用商店搜 Tailscale 安装，登录<u>同一个账号</u>。</div></div>
     <div class="step"><div class="num">3</div><div class="txt"><b>确认已组网</b>两边都登录后自动组成虚拟局域网，无需其他设置。</div></div>
-    <div class="step"><div class="num">4</div><div class="txt"><b>记下电脑地址</b>电脑端 DSH 客户端 → 设置 →「手机远程」，找到 Tailscale 地址（100.x.x.x:3191）。</div></div>
+    <div class="step"><div class="num">4</div><div class="txt"><b>记下电脑地址</b>电脑端 DSH 客户端 → 设置 →「手机远程」，找到 Tailscale 地址（100.x.x.x:3191），或直接用手机扫二维码。</div></div>
     <div class="step"><div class="num">5</div><div class="txt"><b>手机填地址连接</b>下一步输入该地址 + 配对码即可。</div></div>
     <button class="bigbtn" onclick="finishOnboard()">已了解，开始连接 →</button>
   </div>
@@ -76,7 +95,7 @@ a.dl{color:var(--blue);text-decoration:none;font-size:15px;padding:8px 4px}
 <div id="pairView" style="display:none;flex:1;overflow-y:auto;padding:18px">
   <div class="card">
     <h2>🔗 连接电脑</h2>
-    <div class="muted">同一 WiFi 填局域网 IP；人在外填 Tailscale 地址（100.x.x.x）。电脑端「手机远程」页有地址和配对码。</div>
+    <div class="muted">同一 WiFi 填局域网 IP；人在外填 Tailscale 地址（100.x.x.x）。电脑端「手机远程」页有地址和配对码，也可直接扫码。</div>
     <input id="server" placeholder="如 192.168.1.100:3191 或 100.64.0.2:3191" inputmode="url" autocapitalize="off" autocomplete="off">
     <input id="code" placeholder="6 位配对码" inputmode="numeric" maxlength="6">
     <button class="bigbtn" onclick="doPair()">连接</button>
@@ -91,6 +110,8 @@ a.dl{color:var(--blue);text-decoration:none;font-size:15px;padding:8px 4px}
   <div class="tabs">
     <button id="tabChat" class="on" onclick="showTab('chat')">💬 对话</button>
     <button id="tabFile" onclick="showTab('file')">📁 文件</button>
+    <button id="tabTrans" onclick="showTab('trans')">🌐 翻译</button>
+    <button id="tabMarket" onclick="showTab('market')">🧩 市场</button>
     <button id="tabSet" onclick="showTab('set')">⚙️ 设置</button>
   </div>
   <div id="chatView" style="flex:1;display:flex;flex-direction:column">
@@ -111,11 +132,50 @@ a.dl{color:var(--blue);text-decoration:none;font-size:15px;padding:8px 4px}
       <div id="fileList"></div>
     </main>
   </div>
+  <div id="transView" style="flex:1;display:none;flex-direction:column">
+    <div class="subtabs">
+      <button id="subPdf" class="on" onclick="showTrans('pdf')">📄 PDF 翻译</button>
+      <button id="subOffice" onclick="showTrans('office')">📝 Office 翻译</button>
+    </div>
+    <main id="transBody">
+      <div id="pdfPane">
+        <div class="card">
+          <h2>📄 PDF 翻译</h2>
+          <div class="muted">上传英文 PDF（数据手册/文档），自动判断文字版或扫描版并翻译成中文；专业术语、数字、引脚名保持原文。</div>
+          <button class="bigbtn ghost" onclick="$('pdffile').click()">选择 PDF 文件</button>
+          <input type="file" id="pdffile" accept=".pdf,application/pdf" style="display:none" onchange="transPdfFile(this)">
+          <div id="pdfMsg" class="muted" style="margin-top:8px"></div>
+        </div>
+        <div id="pdfResult"></div>
+      </div>
+      <div id="officePane" style="display:none">
+        <div class="card">
+          <h2>📝 Office 翻译</h2>
+          <div class="muted">上传 Word(.docx)/Excel(.xlsx)/PPT(.pptx)，全文翻译成中文；可逐段修改译文后下载。WPS 请先另存为这些格式。</div>
+          <button class="bigbtn ghost" onclick="$('officefile').click()">选择 Office 文件</button>
+          <input type="file" id="officefile" accept=".docx,.xlsx,.pptx" style="display:none" onchange="transOfficeFile(this)">
+          <div id="officeMsg" class="muted" style="margin-top:8px"></div>
+          <button class="bigbtn" id="officeSaveBtn" style="display:none" onclick="saveOfficeTrans()">💾 保存译文文件</button>
+        </div>
+        <div id="officeResult"></div>
+      </div>
+    </main>
+  </div>
+  <div id="marketView" style="flex:1;display:none;flex-direction:column">
+    <div class="subtabs">
+      <button id="subTool" class="on" onclick="showMarket('tool')">🔧 Tool 市场</button>
+      <button id="subPlugin" onclick="showMarket('plugin')">🧩 Plugin 市场</button>
+    </div>
+    <main id="marketBody"><div class="spin">加载中…</div></main>
+  </div>
   <div id="setView" style="flex:1;display:none;overflow-y:auto">
     <main>
       <div class="card"><h2>💰 余额 / 用量</h2><div id="balanceBox"><div class="muted">加载中…</div></div></div>
       <div class="card"><h2>🖼 识图（视图模式）</h2><div class="muted">智谱视觉 Key（开头无固定格式，保存后与电脑端同步）。</div><input id="visionKey" placeholder="粘贴智谱 API Key"><button class="bigbtn" onclick="saveVision()">保存 Key</button><div id="visionMsg" class="muted" style="margin-top:8px"></div></div>
       <div class="card"><h2>🔒 权限模式</h2><div class="muted">敏感操作（写/改/删文件）是否需确认，与电脑端同步。</div><button class="bigbtn" id="permToggle" onclick="togglePerm()">加载中…</button></div>
+      <div class="card"><h2>🖼 电脑界面背景</h2><div class="muted">设置电脑客户端的界面背景（与电脑端同步）。</div><div class="wprow" id="wpPresets"></div><button class="bigbtn ghost" onclick="$('wpfile').click()">⬆ 上传自定义壁纸</button><input type="file" id="wpfile" accept="image/*" style="display:none" onchange="wpImage(this)"><div id="wpMsg" class="muted" style="margin-top:8px"></div></div>
+      <div class="card"><h2>🔒 意见区</h2><div class="muted">提交功能建议或问题反馈到 GitHub。</div><select id="fbType"><option value="idea">功能建议</option><option value="bug">问题反馈</option><option value="other">其他</option></select><input id="fbTitle" placeholder="标题（一句话说明）"><textarea id="fbBody" placeholder="详细描述你的建议或问题…" rows="5"></textarea><button class="bigbtn" onclick="submitFeedback()">提交</button><div id="fbMsg" class="muted" style="margin-top:8px"></div></div>
+      <div class="card"><h2>📖 使用指南</h2><div class="muted">· <b>接入 API</b>：电脑端「设置 → 模型」配置 DeepSeek API Key。<br>· <b>权限门</b>：修改/删除文件需勾选同意；读取默认放行。<br>· <b>余额/用量</b>：查看 DeepSeek 账户余额。<br>· <b>市场</b>：一键安装热门 Tool/Plugin，装后需「启用」才生效。<br>· <b>翻译</b>：PDF/Office 文档翻译成中文。<br>· <b>手机远程</b>：手机给电脑发消息、传文件、查余额，与电脑共用同一后端。</div></div>
       <div class="card"><h2>🔄 检查更新</h2><div id="updateBox"><div class="muted">加载中…</div></div></div>
       <div class="card"><h2>🔌 连接</h2><div class="muted" style="margin-bottom:6px">当前连接：<span id="curServer" style="font-weight:600;color:var(--txt)">-</span></div><div id="addrList"></div><button class="bigbtn ghost" onclick="switchServer()">切换服务器</button></div>
     </main>
@@ -126,6 +186,9 @@ a.dl{color:var(--blue);text-decoration:none;font-size:15px;padding:8px 4px}
 var server='', token='';
 var state = { path:'' };
 var voiceRec = null;
+var officeState = { file:'', filename:'', chunks:null, resultBase64:'', outFilename:'' };
+var marketKind = 'tool';
+var CHAT_KEY = 'dsh_chat_history';
 function $(id){return document.getElementById(id)}
 
 function normalizeAddr(s){
@@ -146,7 +209,7 @@ function load(){
   if(server && token){
     $('server').value=server;
     fetch('http://'+server+'/api/status',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
-      .then(function(r){return r.json()}).then(function(j){ if(j&&j.ok){ showMain(); refreshSettings(); refreshChat(false); } else showPair('连接失败，请重新输入'); })
+      .then(function(r){return r.json()}).then(function(j){ if(j&&j.ok){ showMain(); restoreChatLocal(); refreshSettings(); refreshChat(false); } else showPair('连接失败，请重新输入'); })
       .catch(function(){ showPair('无法连接 '+server+'，请重新输入地址和配对码'); });
   } else showPair('');
 }
@@ -157,7 +220,7 @@ function doPair(){
   fetch('http://'+server+'/api/pair',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:code})})
     .then(function(r){return r.json()})
     .then(function(j){
-      if(j&&j.ok&&j.token){ token=j.token; localStorage.setItem('dsh_server',server); localStorage.setItem('dsh_token',token); $('pairMsg').textContent=''; showMain(); refreshSettings(); refreshChat(false); }
+      if(j&&j.ok&&j.token){ token=j.token; localStorage.setItem('dsh_server',server); localStorage.setItem('dsh_token',token); $('pairMsg').textContent=''; showMain(); restoreChatLocal(); refreshSettings(); refreshChat(false); }
       else $('pairMsg').textContent='连接失败：'+(j&&j.error||'未知');
     }).catch(function(e){ $('pairMsg').textContent='无法连接：'+e.message });
 }
@@ -165,12 +228,18 @@ function doPair(){
 function api(path,data){ return fetch('http://'+server+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({token:token},data||{}))}).then(function(r){return r.json()}); }
 
 function showTab(t){
-  $('tabChat').className = t==='chat'?'on':''; $('tabFile').className = t==='file'?'on':''; $('tabSet').className = t==='set'?'on':'';
-  $('chatView').style.display = t==='chat'?'flex':'none'; $('fileView').style.display = t==='file'?'flex':'none'; $('setView').style.display = t==='set'?'block':'none';
+  $('tabChat').className = t==='chat'?'on':''; $('tabFile').className = t==='file'?'on':''; $('tabTrans').className = t==='trans'?'on':''; $('tabMarket').className = t==='market'?'on':''; $('tabSet').className = t==='set'?'on':'';
+  $('chatView').style.display = t==='chat'?'flex':'none'; $('fileView').style.display = t==='file'?'flex':'none'; $('transView').style.display = t==='trans'?'flex':'none'; $('marketView').style.display = t==='market'?'flex':'none'; $('setView').style.display = t==='set'?'block':'none';
   if(t==='file') listDir('');
+  if(t==='market') loadMarket();
 }
 function addMsg(text,cls){ var d=document.createElement('div'); d.className='msg '+cls; d.textContent=text; $('chatBox').appendChild(d); $('chatBox').scrollTop=$('chatBox').scrollHeight; }
 function addAi(t){ addMsg(t,'ai'); }
+
+// 历史持久化：localStorage 保存对话，刷新/重开/离线也能看到上次对话
+function saveChatLocal(msgs){ try{ localStorage.setItem(CHAT_KEY, JSON.stringify(msgs)); }catch(e){} }
+function loadChatLocal(){ try{ return JSON.parse(localStorage.getItem(CHAT_KEY)||'[]'); }catch(e){ return []; } }
+function restoreChatLocal(){ var local=loadChatLocal(); if(local.length){ $('chatBox').innerHTML=''; local.forEach(function(m){ addMsg(m.text, m.role==='user'?'me':'ai'); }); lastMsgCount = local.length; } }
 
 // 多轮对话：读电脑活动会话的完整消息流，本地渲染（user=我，assistant=AI）
 var lastMsgCount = 0;
@@ -181,6 +250,7 @@ function refreshChat(appendOnly){
     if(!appendOnly){ $('chatBox').innerHTML=''; msgs.forEach(function(m){ addMsg(m.text, m.role==='user'?'me':'ai'); }); }
     else { for(var i=lastMsgCount; i<msgs.length; i++) addMsg(msgs[i].text, msgs[i].role==='user'?'me':'ai'); }
     lastMsgCount = msgs.length;
+    saveChatLocal(msgs);
   });
 }
 function sendMsg(){
@@ -195,7 +265,7 @@ function pollChat(){
     rpc('getChatMessages').then(function(j){
       if(!j||!j.ok) return;
       var msgs = j.messages || [];
-      if(msgs.length > lastMsgCount){ for(var i=lastMsgCount;i<msgs.length;i++) addMsg(msgs[i].text, msgs[i].role==='user'?'me':'ai'); lastMsgCount=msgs.length; idle=0; }
+      if(msgs.length > lastMsgCount){ for(var i=lastMsgCount;i<msgs.length;i++) addMsg(msgs[i].text, msgs[i].role==='user'?'me':'ai'); lastMsgCount=msgs.length; idle=0; saveChatLocal(msgs); }
       else { idle++; if(idle>6) clearInterval(pollTimer); } // 连续无新消息约15秒后停
     });
   },2500);
@@ -240,6 +310,152 @@ function listDir(p){
   });
 }
 
+// ===== 翻译 =====
+function showTrans(m){
+  $('subPdf').className = m==='pdf'?'on':''; $('subOffice').className = m==='office'?'on':'';
+  $('pdfPane').style.display = m==='pdf'?'block':'none'; $('officePane').style.display = m==='office'?'block':'none';
+}
+function transPdfFile(inp){
+  var f = inp.files && inp.files[0]; if(!f) return;
+  $('pdfMsg').textContent='翻译中，请耐心等待…'; $('pdfResult').innerHTML='';
+  var rd = new FileReader();
+  rd.onload = function(){
+    rpc('translatePdf',{pdf:rd.result}).then(function(j){
+      if(!j||!j.ok){ $('pdfMsg').textContent=(j&&j.error)||'翻译失败'; return; }
+      $('pdfMsg').textContent='完成 ✓ 共 '+(j.pages||[]).length+' 页 · '+(j.mode==='scan'?'扫描版(OCR)':j.mode==='scan-nokey'?'扫描版需配置视觉Key':'文字版');
+      var h='';
+      (j.pages||[]).forEach(function(pg){
+        h+='<div class="transpg"><div class="lbl">第 '+pg.page+' 页 · 原文</div><div class="orig">'+esc(pg.original)+'</div><div class="lbl">译文</div><div class="tr">'+esc(pg.translated)+'</div></div>';
+      });
+      $('pdfResult').innerHTML=h;
+    });
+  };
+  rd.readAsDataURL(f); inp.value='';
+}
+function transOfficeFile(inp){
+  var f = inp.files && inp.files[0]; if(!f) return;
+  var ext = (f.name.toLowerCase().match(/\.(docx|xlsx|pptx)$/)||[])[1];
+  if(!ext){ $('officeMsg').textContent='只支持 .docx/.xlsx/.pptx'; return; }
+  $('officeMsg').textContent='翻译中，请耐心等待…'; $('officeResult').innerHTML=''; $('officeSaveBtn').style.display='none';
+  var rd = new FileReader();
+  rd.onload = function(){
+    officeState.file=rd.result; officeState.filename=f.name;
+    rpc('translateOffice',{file:rd.result, filename:f.name}).then(function(j){
+      if(!j||!j.ok){ $('officeMsg').textContent=(j&&j.error)||'翻译失败'; return; }
+      officeState.chunks=j.chunks||[]; officeState.resultBase64=j.resultBase64||''; officeState.outFilename=j.outFilename||'';
+      $('officeMsg').textContent='翻译完成 ✓ 共 '+(officeState.chunks.length)+' 段，可修改后保存';
+      $('officeSaveBtn').style.display='block';
+      renderOfficeChunks();
+    });
+  };
+  rd.readAsDataURL(f); inp.value='';
+}
+function renderOfficeChunks(){
+  var h='';
+  officeState.chunks.forEach(function(c,idx){
+    h+='<div class="transpg"><div class="lbl">原文</div><div class="orig">'+esc(c.original)+'</div><div class="lbl">译文（点一下可修改）</div><textarea rows="3" onchange="officeEdit('+idx+',this.value)">'+esc(c.translated)+'</textarea></div>';
+  });
+  $('officeResult').innerHTML=h;
+}
+function officeEdit(idx,val){ officeState.chunks[idx].translated = val; }
+function downloadBase64(b64, filename){
+  try{
+    var bin = atob(b64); var arr = new Uint8Array(bin.length);
+    for(var i=0;i<bin.length;i++) arr[i]=bin.charCodeAt(i);
+    var blob = new Blob([arr], {type:'application/octet-stream'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a'); a.href=url; a.download=filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){URL.revokeObjectURL(url)},3000);
+  }catch(e){ alert('下载失败'); }
+}
+function saveOfficeTrans(){
+  if(!officeState.file || !officeState.chunks){ alert('请先翻译文件'); return; }
+  $('officeMsg').textContent='正在生成译文文件…';
+  rpc('saveOffice',{file:officeState.file, filename:officeState.filename, chunks:officeState.chunks}).then(function(j){
+    if(j&&j.ok){ downloadBase64(j.resultBase64, j.outFilename); $('officeMsg').textContent='已生成并下载 '+j.outFilename; }
+    else $('officeMsg').textContent=(j&&j.error)||'保存失败';
+  });
+}
+
+// ===== 市场 =====
+function showMarket(k){ marketKind=k; $('subTool').className = k==='tool'?'on':''; $('subPlugin').className = k==='plugin'?'on':''; loadMarket(); }
+function loadMarket(){
+  var listMethod = marketKind==='tool'?'listTools':'listPlugins';
+  $('marketBody').innerHTML='<div class="spin">加载中…</div>';
+  rpc(listMethod).then(function(j){
+    if(!j||!j.ok){ $('marketBody').innerHTML='<div class="muted">'+(j&&j.error||'加载失败')+'</div>'; return; }
+    var cats = j.categories||[]; var h='';
+    cats.forEach(function(cat){
+      h+='<h3>'+esc(cat.name)+'</h3>';
+      (cat.items||[]).forEach(function(it){
+        h+='<div class="market-item"><div class="nm">'+esc(it.name)+(it.enabled?' <span style="color:#30a46c;font-size:12px">启用中</span>':(it.installed?' <span style="color:#8a919f;font-size:12px">已禁用</span>':''))+'</div>';
+        if(it.desc) h+='<div class="dc">'+esc(it.desc)+'</div>';
+        if(it.note) h+='<div class="dc">'+esc(it.note)+'</div>';
+        if(it.pkg) h+='<div class="pk">'+esc(it.pkg)+'</div>';
+        if(it.config) h+='<div class="dc" style="color:#4d6bfe">⚙ '+esc(it.config)+'</div>';
+        h+='<div class="market-acts">';
+        if(it.installed){
+          h+='<button class="minibtn ghost" onclick="marketAct(\'set'+(marketKind==='tool'?'Tool':'Plugin')+'Enabled\',{id:\''+it.id+'\',enabled:'+(!it.enabled)+'})">'+(it.enabled?'禁用':'启用')+'</button>';
+          h+='<button class="minibtn ghost" onclick="marketAct(\'uninstall'+(marketKind==='tool'?'Tool':'Plugin')+'\',{id:\''+it.id+'\'})">卸载</button>';
+        } else {
+          h+='<button class="minibtn" onclick="marketAct(\'install'+(marketKind==='tool'?'Tool':'Plugin')+'\',{id:\''+it.id+'\'})">安装</button>';
+        }
+        h+='</div></div>';
+      });
+    });
+    $('marketBody').innerHTML=h||'<div class="muted">暂无条目</div>';
+  });
+}
+function marketAct(key,args){
+  rpc(key,args).then(function(j){
+    if(j&&j.ok) loadMarket();
+    else alert((j&&j.error)||'操作失败');
+  });
+}
+
+// ===== 壁纸 =====
+var WALLPAPER_PRESETS = [
+  {label:'默认', mode:'', value:''},
+  {label:'浅灰白', mode:'color', value:'#f5f6f8'},
+  {label:'深色', mode:'color', value:'#14161a'},
+  {label:'雾蓝', mode:'color', value:'#eef2ff'},
+  {label:'蓝紫渐变', mode:'gradient', value:'linear-gradient(135deg,#eef2ff,#dbeafe)'},
+  {label:'深海渐变', mode:'gradient', value:'linear-gradient(135deg,#1e293b,#0f172a)'}
+];
+function loadWallpaper(){
+  var h=''; WALLPAPER_PRESETS.forEach(function(p,i){ h+='<button class="wpbtn" id="wp_'+i+'" onclick="setWp('+i+')">'+p.label+'</button>'; });
+  $('wpPresets').innerHTML=h;
+  rpc('getWallpaper').then(function(j){
+    if(!j||!j.ok) return;
+    for(var i=0;i<WALLPAPER_PRESETS.length;i++){ if(WALLPAPER_PRESETS[i].mode===j.mode && WALLPAPER_PRESETS[i].value===j.value){ $('wp_'+i).className='wpbtn on'; } }
+  });
+}
+function setWp(i){
+  var p=WALLPAPER_PRESETS[i];
+  rpc('setWallpaper',{mode:p.mode, value:p.value}).then(function(j){
+    if(j&&j.ok){ $('wpMsg').textContent='已应用 '+(p.label||'默认')+' ✓'; loadWallpaper(); }
+    else $('wpMsg').textContent=(j&&j.error)||'设置失败';
+  });
+}
+function wpImage(inp){
+  var f=inp.files&&inp.files[0]; if(!f) return;
+  var rd=new FileReader();
+  rd.onload=function(){ rpc('setWallpaper',{mode:'image', value:rd.result}).then(function(j){ if(j&&j.ok){ $('wpMsg').textContent='已应用自定义壁纸 ✓'; loadWallpaper(); } else $('wpMsg').textContent=(j&&j.error)||'设置失败'; }); };
+  rd.readAsDataURL(f); inp.value='';
+}
+
+// ===== 意见区 =====
+function submitFeedback(){
+  var title=$('fbTitle').value.trim(); var body=$('fbBody').value; var type=$('fbType').value;
+  if(!title){ $('fbMsg').textContent='请先填写标题'; return; }
+  $('fbMsg').textContent='正在打开 GitHub 提交页…';
+  rpc('openFeedback',{type:type, title:title, body:body}).then(function(j){
+    if(j&&j.ok&&j.url){ window.open(j.url,'_blank'); $('fbMsg').textContent='已在浏览器打开 GitHub 提交页，点「Submit new issue」完成发布。'; }
+    else $('fbMsg').textContent=(j&&j.error)||'打开失败';
+  });
+}
+
 function loadBalance(){ rpc('deepseekBalance').then(function(j){ if(j&&j.ok){ try{ var b=JSON.parse(j.body); var infos=b.balance_infos||[]; var h=''; infos.forEach(function(i){ h+='<div class="row"><span class="lbl">'+(i.currency||'')+' 余额</span><span class="val">'+(i.total_balance||'0')+'</span></div>'; }); $('balanceBox').innerHTML=h||'<div class="muted">未返回余额</div>'; } catch(e){ $('balanceBox').innerHTML='<div class="muted">解析失败</div>'; } } else $('balanceBox').innerHTML='<div class="muted">'+(j&&j.error||'查询失败')+'</div>'; }); }
 function loadVision(){ rpc('getVisionStatus').then(function(j){ if(j&&j.ok&&j.configured){ $('visionKey').placeholder='已配置（留空则不变）'; } }); }
 function saveVision(){ var k=$('visionKey').value.trim(); if(!k){ $('visionMsg').textContent='请输入 Key'; return; } rpc('setVisionKey',{key:k}).then(function(j){ $('visionMsg').textContent = (j&&j.ok)?'已保存 ✓':'失败：'+(j&&j.error||''); $('visionKey').value=''; loadVision(); }); }
@@ -262,10 +478,10 @@ function copyAddr(t){
   function fallback(){ var ta=document.createElement('textarea'); ta.value=t; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.focus(); ta.select(); try{ document.execCommand('copy'); done(); }catch(e){ alert('复制失败，请手动复制：'+t); } document.body.removeChild(ta); }
   if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(done,function(){ fallback(); }); } else fallback();
 }
-function refreshSettings(){ loadBalance(); loadVision(); loadPerm(); loadUpdate(); loadRemoteInfo(); }
+function refreshSettings(){ loadBalance(); loadVision(); loadPerm(); loadUpdate(); loadWallpaper(); loadRemoteInfo(); }
 
 function parentOf(p){ var i=p.lastIndexOf('\\'); if(i<0)i=p.lastIndexOf('/'); return i>0?p.slice(0,i):''; }
-function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function fmt(n){ if(n<1024)return n+' B'; if(n<1048576)return (n/1024).toFixed(1)+' KB'; if(n<1073741824)return (n/1048576).toFixed(1)+' MB'; return (n/1073741824).toFixed(2)+' GB'; }
 
 load();
