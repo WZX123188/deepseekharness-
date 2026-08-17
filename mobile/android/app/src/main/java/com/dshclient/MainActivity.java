@@ -1,14 +1,21 @@
 package com.dshclient;
 
+import android.Manifest;
 import android.annotation.SuppressLint;
 import android.app.Activity;
 import android.app.DownloadManager;
 import android.content.Context;
+import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.speech.RecognitionListener;
+import android.speech.RecognizerIntent;
+import android.speech.SpeechRecognizer;
 import android.webkit.DownloadListener;
+import android.webkit.JavascriptInterface;
 import android.webkit.PermissionRequest;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -16,9 +23,13 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
-/** WebView 包壳：加载内置 PWA（连接电脑端 3191 远程服务）。 */
+import java.util.ArrayList;
+import java.util.Locale;
+
+/** WebView 包壳：加载内置 PWA（连接电脑端 3191 远程服务）。语音识别走 Android 原生 SpeechRecognizer。 */
 public class MainActivity extends Activity {
     private WebView webView;
+    private SpeechRecognizer speechRecognizer;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
@@ -31,7 +42,6 @@ public class MainActivity extends Activity {
         s.setAllowFileAccess(true);
         s.setAllowContentAccess(true);
         s.setMediaPlaybackRequiresUserGesture(false);
-        // 适配手机屏幕
         s.setUseWideViewPort(true);
         s.setLoadWithOverviewMode(true);
 
@@ -42,7 +52,6 @@ public class MainActivity extends Activity {
             }
         });
 
-        // 下载电脑文件 → 存到手机 Download 目录（任务二：文件传手机）
         webView.setDownloadListener(new DownloadListener() {
             @Override
             public void onDownloadStart(String url, String userAgent, String contentDisposition, String mimetype, long contentLength) {
@@ -58,7 +67,7 @@ public class MainActivity extends Activity {
             }
         });
 
-        // 语音识别需要麦克风权限（任务三）
+        // WebView 权限（摄像头 getUserMedia 等）授权
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
             public void onPermissionRequest(final PermissionRequest request) {
@@ -73,8 +82,84 @@ public class MainActivity extends Activity {
             }
         });
 
+        // 语音识别 JSBridge（Android 原生 SpeechRecognizer）
+        webView.addJavascriptInterface(new Object() {
+            @JavascriptInterface
+            public void startSpeech() { startNativeSpeech(); }
+            @JavascriptInterface
+            public void stopSpeech() { stopNativeSpeech(); }
+            @JavascriptInterface
+            public boolean hasSpeech() { return SpeechRecognizer.isRecognitionAvailable(MainActivity.this); }
+        }, "AndroidSpeech");
+
         setContentView(webView);
         webView.loadUrl("file:///android_asset/index.html");
+
+        // 自动申请麦克风 + 摄像头权限（Android 6.0+ 运行时权限）
+        if (Build.VERSION.SDK_INT >= 23) {
+            ArrayList<String> need = new ArrayList<>();
+            if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) need.add(Manifest.permission.RECORD_AUDIO);
+            if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) need.add(Manifest.permission.CAMERA);
+            if (!need.isEmpty()) {
+                requestPermissions(need.toArray(new String[0]), 100);
+            }
+        }
+    }
+
+    private void callJs(String fn, String arg) {
+        if (webView == null) return;
+        String js = fn + "(" + (arg == null ? "" : "'" + arg.replace("\\", "\\\\").replace("'", "\\'") + "'") + ")";
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                webView.evaluateJavascript(js, null);
+            }
+        });
+    }
+
+    private void startNativeSpeech() {
+        stopNativeSpeech();
+        try {
+            speechRecognizer = SpeechRecognizer.createSpeechRecognizer(this);
+            speechRecognizer.setRecognitionListener(new RecognitionListener() {
+                @Override public void onReadyForSpeech(Bundle params) { callJs("window.__onSpeechEvent", "ready"); }
+                @Override public void onBeginningOfSpeech() {}
+                @Override public void onRmsChanged(float rmsdB) {}
+                @Override public void onBufferReceived(byte[] buffer) {}
+                @Override public void onEndOfSpeech() {}
+                @Override public void onError(int error) {
+                    String msg = "语音识别失败";
+                    if (error == SpeechRecognizer.ERROR_NO_MATCH) msg = "没有听清，请重试";
+                    else if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) msg = "麦克风权限被拒绝，请在系统设置里开启";
+                    callJs("window.__onSpeechEvent", "error:" + msg);
+                    stopNativeSpeech();
+                }
+                @Override public void onResults(Bundle results) {
+                    try {
+                        ArrayList<String> r = results.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
+                        String text = (r != null && !r.isEmpty()) ? r.get(0) : "";
+                        callJs("window.__onSpeechEvent", "result:" + text);
+                    } catch (Exception e) { callJs("window.__onSpeechEvent", "error:解析失败"); }
+                    stopNativeSpeech();
+                }
+                @Override public void onPartialResults(Bundle partialResults) {}
+                @Override public void onEvent(int eventType, Bundle params) {}
+            });
+            Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "zh-CN");
+            intent.putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false);
+            speechRecognizer.startListening(intent);
+        } catch (Exception e) {
+            callJs("window.__onSpeechEvent", "error:" + e.getMessage());
+        }
+    }
+
+    private void stopNativeSpeech() {
+        if (speechRecognizer != null) {
+            try { speechRecognizer.destroy(); } catch (Exception e) {}
+            speechRecognizer = null;
+        }
     }
 
     @Override
@@ -85,6 +170,7 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        stopNativeSpeech();
         if (webView != null) { webView.destroy(); webView = null; }
         super.onDestroy();
     }

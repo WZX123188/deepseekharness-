@@ -975,7 +975,7 @@ function startRemoteControl(ctx, svc) {
             if (existsSync(file) && !rel.includes('..')) { res.writeHead(200, { 'Content-Type': mime }); res.end(readFileSync(file)); return }
             return rcJson(res, { ok: false, error: 'not found' }, 404)
           }
-          if (api === '/api/status') return rcJson(res, { ok: true, version: '6.0.0', paired: !!rcCode })
+          if (api === '/api/status') return rcJson(res, { ok: true, version: '6.1.0', paired: !!rcCode })
           if (api === '/api/pair') {
             if (parsed.code === rcCode) return rcJson(res, { ok: true, token: rcToken })
             return rcJson(res, { ok: false, error: '配对码错误' }, 401)

@@ -193,18 +193,27 @@ window.__ModuleLoader__.load({
 
     // ===== 语音输入（v5.1.0）：麦克风图标 → 语音转文字 → 填入输入框 =====
     function startVoice(onResult, onError, onEnd) {
-      var SR = (typeof window !== "undefined") && (window.SpeechRecognition || window.webkitSpeechRecognition)
-      if (!SR) { if (onError) onError("当前环境不支持语音识别"); return null }
-      var rec = new SR()
+      var SR = null
+      try { SR = (typeof window !== "undefined") && (window.SpeechRecognition || window.webkitSpeechRecognition) } catch (e) { SR = null }
+      if (!SR) { if (onError) onError("当前环境不支持语音识别，请用手机端语音"); return null }
+      var rec = null
+      try { rec = new SR() } catch (e) { if (onError) onError("语音识别初始化失败，请用手机端语音"); return null }
       rec.lang = "zh-CN"
       rec.interimResults = false
       rec.maxAlternatives = 1
+      var ended = false
+      function finish() { if (ended) return; ended = true; if (onEnd) onEnd() }
       rec.onresult = function (e) {
         try { var t = e.results && e.results[0] && e.results[0][0] && e.results[0][0].transcript; if (t && onResult) onResult(t) } catch (e2) {}
       }
-      rec.onerror = function (e) { if (onError) onError((e && e.error) || "语音识别失败") }
-      rec.onend = function () { if (onEnd) onEnd() }
-      try { rec.start() } catch (e2) { if (onError) onError("无法启动麦克风：" + (e2 && e2.message || e2)) }
+      rec.onerror = function (e) {
+        var err = (e && e.error) || "语音识别失败"
+        if (err === "network" || err === "service-not-allowed" || err === "not-allowed") err = "电脑端语音识别服务不可用（Electron 环境限制），请用手机端语音"
+        if (onError) onError(err)
+        finish()
+      }
+      rec.onend = function () { finish() }
+      try { rec.start() } catch (e2) { if (onError) onError("无法启动麦克风，请用手机端语音"); finish() }
       return rec
     }
     // 语音输入：点击开始 → 再点击结束（stop 后取识别结果）
@@ -1554,18 +1563,18 @@ function makeQrMatrix(text) {
         el("div", { className: "dsh-card" },
           el("div", { className: "dsh-h2", style: { marginBottom: "10px" } }, "🔑 配对码"),
           info && info.code ? el("div", { style: { fontSize: "28px", fontWeight: 700, letterSpacing: "4px", color: "#4d6bfe" } }, info.code) : el("div", { className: "dsh-muted" }, "加载中…"),
-          el("div", { className: "dsh-note", style: { marginTop: "8px" } }, "手机端打开下方网址，输入这个配对码即可连接。")),
+          el("div", { className: "dsh-note", style: { marginTop: "8px" } }, "手机扫码下方二维码即可直接登录（免输配对码）；或打开网址手动输入配对码。")),
         el("div", { className: "dsh-card" },
-          el("div", { className: "dsh-h2", style: { marginBottom: "8px" } }, "🌐 连接网址（扫码或复制发到手机）"),
+          el("div", { className: "dsh-h2", style: { marginBottom: "8px" } }, "🌐 扫码直接连接（或复制网址）"),
           info && info.ips && info.ips.length ? info.ips.map(function (ip) {
-            var url = "http://" + ip + ":" + (info.port || 3191) + "/mobile"
+            var url = "http://" + ip + ":" + (info.port || 3191) + "/mobile?code=" + (info.code || "")
             return el("div", { key: ip, style: { display: "flex", alignItems: "center", gap: "12px", padding: "8px 0" } },
               el(QrBox, { url: url }),
               el("div", { style: { flex: 1, minWidth: 0 } },
                 el("div", { className: "dsh-value", style: { fontSize: "13px", wordBreak: "break-all" } }, url),
                 el("button", { className: "dsh-btn ghost", onClick: function () { copyText(url) }, style: { padding: "6px 12px", fontSize: "13px", marginTop: "6px" } }, "复制")))
           }) : el("div", { className: "dsh-muted" }, "未检测到局域网地址"),
-          el("div", { className: "dsh-note", style: { marginTop: "8px", lineHeight: "1.7" } }, "· 同一 WiFi：手机浏览器直接打开上面网址（局域网，私密）。" + "\n· 人在外：装 Tailscale 后，用 Tailscale 的 IP 替换网址里的 IP 即可（如 http://100.x.x.x:3191/mobile）。" + "\n· 手机浏览器/相机扫二维码可直接打开。")),
+          el("div", { className: "dsh-note", style: { marginTop: "8px", lineHeight: "1.7" } }, "· 同一 WiFi：手机浏览器/相机扫二维码即自动登录（局域网，私密）。" + "\n· 人在外：装 Tailscale 后，用 Tailscale 的 IP 替换网址里的 IP（如 http://100.x.x.x:3191/mobile）。" + "\n· 二维码含配对码，有效期内可反复扫。")),
         el("div", { className: "dsh-card" },
           el("div", { className: "dsh-h2", style: { marginBottom: "8px" } }, "📥 手机端安装"),
           el("div", { className: "dsh-muted", style: { lineHeight: "1.8" } }, "· 安卓：GitHub Release 下载 APK 安装（或直接用浏览器打开网址）。" + "\n· 苹果：Safari 打开网址 → 分享 → 添加到主屏幕。")),
