@@ -23,9 +23,10 @@
 - test-env（3197/3193/3195）：插件加载正常、/mobile 含新标记(100dvh/loadRemoteInfo/addrList)、getChatMessages/getRemoteInfo 端点正常
 
 ### 待办（本任务收尾）
-- [ ] 打包（已 done：--win --dir + make-portable，release 保留 5.3.2/5.3.3）
-- [ ] git commit + tag v5.3.3 + push
-- [ ] 用户重启桌面端后实测：手机能收到回复、顶部/底部固定、设置页能看到电脑地址
+- [x] 打包（--win --dir + make-portable，release 保留 5.3.2/5.3.3）
+- [x] git commit + tag v5.3.3 + push（8920d07 + 0438509 同步安卓 assets）
+- [x] 触发 APK 重新构建（workflow_dispatch @ main）
+- [ ] 用户重启桌面端后实测：手机能收到回复、顶部/底部固定、设置页能看到电脑地址；APK 构建完成后装新版
 
 ### 后续需求（下次继续，举一反三）
 - App 图标换小蓝鲸（ico→png + mipmap）
