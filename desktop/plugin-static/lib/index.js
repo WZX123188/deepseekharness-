@@ -811,7 +811,7 @@ function rcSendFile(res, file) {
     res.end(readFileSync(safe))
   } catch (e) { return rcJson(res, { ok: false, error: String((e && e.message) || e) }, 404) }
 }
-function startRemoteControl(ctx) {
+function startRemoteControl(ctx, svc) {
   try {
     rcCode = String(randomInt(100000, 999999))
     const tokenFile = path.join(HOME, 'remote-token.json')
@@ -870,6 +870,14 @@ function startRemoteControl(ctx) {
           }
           if (api === '/api/files/list') return rcJson(res, rcListDir(parsed.path))
           if (api === '/api/files/download') return rcSendFile(res, parsed.path)
+          // 通用 RPC 转发（token 已认证）：手机端余额/用量/设置/多轮对话等走这里，避免直接暴露 3192
+          if (api === '/api/rpc') {
+            const method = parsed.method
+            const fn = svc && typeof svc[method] === 'function' ? svc[method] : null
+            if (!fn) return rcJson(res, { ok: false, error: 'unknown method: ' + method }, 404)
+            const result = await fn.call(svc, parsed.args)
+            return rcJson(res, result)
+          }
           return rcJson(res, { ok: false, error: 'unknown api: ' + api }, 404)
         } catch (e) { return rcJson(res, { ok: false, error: String((e && e.message) || e) }, 500) }
       })
@@ -934,7 +942,7 @@ export function apply(ctx) {
     const svc = new DshClientFeaturesService(ctx)
     startLocalRpc(svc)
     applyCheckpointInjection(ctx)
-    startRemoteControl(ctx)
+    startRemoteControl(ctx, svc)
     cleanupOldAttachments()
     // agent 系统提示：拖入的文档附件缓存位置 + 回答前先读文件
     try {

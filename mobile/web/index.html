@@ -129,7 +129,8 @@ function $(id){return document.getElementById(id)}
 function normalizeAddr(s){
   return String(s||'').replace(/[\uFF01-\uFF5E]/g,function(c){return String.fromCharCode(c.charCodeAt(0)-0xFEE0)}).replace(/\s+/g,'').trim();
 }
-function rpcAddr(){ var ip=(server||'').split(':')[0]||'127.0.0.1'; return 'http://'+ip+':3192/dsh-rpc'; }
+// 手机端 RPC 走 3191 的 /api/rpc（带 token 认证，转发到电脑后端），不直接连 3192（3192 只监听本机）
+function rpc(method,args){ return api('/api/rpc',{method:method,args:args||{}}); }
 
 function showOnboard(){ $('onboardView').style.display='flex'; $('pairView').style.display='none'; $('mainView').style.display='none'; }
 function finishOnboard(){ localStorage.setItem('dsh_onboarded','1'); $('onboardView').style.display='none'; $('pairView').style.display='flex'; }
@@ -160,7 +161,6 @@ function doPair(){
 }
 
 function api(path,data){ return fetch('http://'+server+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({token:token},data||{}))}).then(function(r){return r.json()}); }
-function rpc(method,args){ return fetch(rpcAddr(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({method:method,args:args||{}})}).then(function(r){return r.json()}); }
 
 function showTab(t){
   $('tabChat').className = t==='chat'?'on':''; $('tabFile').className = t==='file'?'on':''; $('tabSet').className = t==='set'?'on':'';
