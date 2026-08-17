@@ -171,6 +171,21 @@ function ensureFeatures(cb) {
   } catch (e) { cb(e) }
 }
 
+// 放行手机远程访问端口（TCP 入站）。手机连不上常见原因是防火墙拦截；非管理员时静默跳过。
+function allowFirewall() {
+  try {
+    const rules = [
+      ['DSH-Web-3180', '3180'],
+      ['DSH-Remote-3191', '3191'],
+      ['DSH-Rpc-3192', '3192'],
+    ]
+    for (const [name, port] of rules) {
+      try { execFileSync('netsh', ['advfirewall', 'firewall', 'delete', 'rule', 'name=' + name], { windowsHide: true, timeout: 8000 }) } catch (e) {}
+      try { execFileSync('netsh', ['advfirewall', 'firewall', 'add', 'rule', 'name=' + name, 'dir=in', 'action=allow', 'protocol=TCP', 'localport=' + port], { windowsHide: true, timeout: 8000 }) } catch (e) {}
+    }
+  } catch (e) {}
+}
+
 function showWin() {
   if (!win || win.isDestroyed()) return
   win.show()
@@ -255,6 +270,7 @@ if (!gotLock) {
   app.whenReady().then(function () {
     Menu.setApplicationMenu(null)  // 去掉顶部 File/Edit 菜单栏
     try { fs.unlinkSync(MARKER) } catch (e) {}  // 清残留标记，防止启动即置顶
+    allowFirewall()  // 放行手机远程访问端口（非管理员静默失败）
     createTray()
     try { globalShortcut.register('CommandOrControl+Alt+D', function () { toggleWin() }) } catch (e) {}
 

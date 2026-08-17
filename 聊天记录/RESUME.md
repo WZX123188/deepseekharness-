@@ -38,13 +38,12 @@ Electron 客户端 + 安装器，附带权限门、余额/用量、更新、Tool
 
 ## 2. 当前状态（2026-08-17 凌晨）
 
-- 最新发布：**v3.0.4**（`DeepSeekClient-portable-3.0.4-win-x64.zip` 便携版）。
-- **v3.0.4（自动续跑断点）**：`CURRENT_TASK.md` 断点文件 + plugin-static 监听 `agent/created` 自动注入断点提示——重启/卡死后新会话自动汇报上次任务，说「继续」即接着做。
-- **已实测本体重启**：watchdog 完整链路验证通过（杀→检测→自动重启→恢复）。
-- **v3.0.3**：识图官网改首页；聊天附件图标卡片（+本地缓存路径，agent 自读）；watchdog 守护（`start-watchdog.bat`）。
-- **v3.0.2**：聊天附件、识图修复、RPC 404 重大修复（本地 RPC 服务）。
-- 权限模式：两个实例的 `dsh-client-config.json` 均为 `permissionMode: "trust"`（完全信任）。
-- 审批策略：`never`（用户设置；gate 已适配：never 下写操作自动放行，不再死锁）。
+- 最新发布：**v5.1.0**（`DeepSeekClient-portable-5.1.0-win-x64.zip` 便携版）。
+- **v5.0.0 手机远程 App**：电脑端 3191 远程服务（配对码+token 认证）；手机网页 PWA（`mobile/web/`）；安卓 APK（GitHub Actions 云构建）；发指令给电脑 agent 执行 + 浏览/下载电脑文件；免费私密（局域网 + Tailscale 跨网）。详见 `mobile/README.md`。
+- **v5.1.0 语音转文字**：电脑端 + 手机端麦克风图标（Web Speech API，手机申请麦克风权限）。
+- **v4.0.0**：视图/拖拽收尾里程碑。
+- **v3.0.4 自动续跑断点**：`CURRENT_TASK.md` + agent/created 自动注入断点提示；watchdog 自愈已实测。
+- 权限模式：两个实例 `permissionMode: "trust"`；审批策略 `never`。
 - 关键修复（详见 PROGRESS.md）：
   1. 安装版打不开 → `package.json` 带 BOM → 已剥除。
   2. 写入权限"没了" → gate 假开关 → 已加 trust/never/fail-open 三层放行，5 副本同步。

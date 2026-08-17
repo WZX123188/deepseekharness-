@@ -21,7 +21,7 @@ window.__ModuleLoader__.load({
       direct("listPlugins"), direct("installPlugin", [argsParam()]), direct("setPluginEnabled", [argsParam()]), direct("uninstallPlugin", [argsParam()]),
       direct("listProjects"), direct("createProject", [argsParam()]), direct("openFeedback", [argsParam()]),
       direct("getVisionStatus"), direct("setVisionKey", [argsParam()]), direct("clearVisionKey"), direct("testVision"), direct("seeImage", [argsParam()]), direct("openVisionSite"),
-      direct("parseAttachment", [argsParam()]),
+      direct("parseAttachment", [argsParam()]), direct("cacheAttachment", [argsParam()]), direct("deleteAttachment", [argsParam()]),
       direct("translateText", [argsParam()]), direct("translatePdf", [argsParam()]),
       direct("translateOffice", [argsParam()]), direct("saveOffice", [argsParam()]),
       direct("getWallpaper"), direct("setWallpaper", [argsParam()]),
@@ -79,6 +79,18 @@ window.__ModuleLoader__.load({
       ta.focus()
       return true
     }
+    // 发送前把「就绪附件」的文件名注入输入框（消息里只显示【附件】文件名，不显示路径），并清空附件卡片。
+    // agent 看到【附件】文件名后，查 attachments/index.json 找到路径再读文件。
+    function flushAttachmentsToDraft() {
+      var parts = []
+      for (var i = 0; i < attachList.length; i++) {
+        var a = attachList[i]
+        if (a.status === "ready" && a.path) parts.push("【附件】" + a.name)
+      }
+      if (parts.length > 0) appendToComposer("\n" + parts.join("\n"))
+      attachList.length = 0
+      notifyAttach()
+    }
     // 附件卡片列表（模块级状态，跨组件共享）
     var attachList = []
     var attachListeners = []
@@ -101,8 +113,7 @@ window.__ModuleLoader__.load({
           if (res && res.ok) {
             item.status = "ready"
             item.path = res.path
-            var txt = "\n【附件】" + item.name + "\n路径：" + res.path + "\n"
-            appendToComposer(txt)
+            // 不再把路径/内容注入输入框——用户只需要看到图标卡片；agent 通过 attachments/index.json 自己读文件
           } else { item.status = "error"; item.error = (res && res.error) || "缓存失败" }
           notifyAttach()
         })
@@ -129,28 +140,14 @@ window.__ModuleLoader__.load({
       })
       return docs.length
     }
-    // 移除卡片 + 清理输入框里注入的路径文本
+    // 移除卡片（点叉叉）：删除缓存文件 + index.json 记录
     function removeAttachment(id) {
       var idx = -1
       for (var i = 0; i < attachList.length; i++) if (attachList[i].id === id) { idx = i; break }
       if (idx < 0) return
       var item = attachList[idx]
       attachList.splice(idx, 1)
-      if (item.path) {
-        var ta = document.querySelector("[data-composer-seat] textarea")
-        if (ta) {
-          var marker = "【附件】" + item.name
-          var at = ta.value.indexOf(marker)
-          if (at >= 0) {
-            var end = ta.value.indexOf("\n\n", at)
-            if (end < 0) end = ta.value.length
-            var proto = window.HTMLTextAreaElement.prototype
-            var setter = Object.getOwnPropertyDescriptor(proto, "value").set
-            setter.call(ta, ta.value.slice(0, at) + ta.value.slice(end))
-            ta.dispatchEvent(new Event("input", { bubbles: true }))
-          }
-        }
-      }
+      if (item.path) callHost("deleteAttachment", { path: item.path })
       notifyAttach()
     }
     // 附件卡片栏（千问样式：图标 + 标题小字 + 右上角叉叉）——挂在输入区上方
@@ -188,6 +185,58 @@ window.__ModuleLoader__.load({
       return el("span", { style: { display: "inline-flex", alignItems: "center" } },
         el("button", { className: "dsh-vision-btn", onClick: pick, title: "附加文件（docx/xlsx/pptx/pdf/txt…）", style: { fontSize: "13px" } }, "📎"),
         el("input", { ref: fileRef, type: "file", multiple: true, accept: ".docx,.xlsx,.pptx,.pdf,.txt,.md,.csv,.json,.log", style: { display: "none" }, onChange: onChange }))
+    }
+
+    // ===== 语音输入（v5.1.0）：麦克风图标 → 语音转文字 → 填入输入框 =====
+    function startVoice(onResult, onError, onEnd) {
+      var SR = (typeof window !== "undefined") && (window.SpeechRecognition || window.webkitSpeechRecognition)
+      if (!SR) { if (onError) onError("当前环境不支持语音识别"); return null }
+      var rec = new SR()
+      rec.lang = "zh-CN"
+      rec.interimResults = false
+      rec.maxAlternatives = 1
+      rec.onresult = function (e) {
+        try { var t = e.results && e.results[0] && e.results[0][0] && e.results[0][0].transcript; if (t && onResult) onResult(t) } catch (e2) {}
+      }
+      rec.onerror = function (e) { if (onError) onError((e && e.error) || "语音识别失败") }
+      rec.onend = function () { if (onEnd) onEnd() }
+      try { rec.start() } catch (e2) { if (onError) onError("无法启动麦克风：" + (e2 && e2.message || e2)) }
+      return rec
+    }
+    // 语音输入：点击开始 → 再点击结束（stop 后取识别结果）
+    function VoiceInputButton() {
+      var bs = React.useState(false); var busy = bs[0]; var setBusy = bs[1]
+      var recRef = React.useRef(null)
+      function toggle() {
+        if (busy) {
+          // 结束：停止识别
+          try { if (recRef.current) recRef.current.stop() } catch (e2) {}
+          recRef.current = null
+          setBusy(false)
+          return
+        }
+        setBusy(true)
+        var rec = startVoice(
+          function (text) {
+            recRef.current = null
+            setBusy(false)
+            if (text) appendToComposer(text)
+          },
+          function (err) {
+            recRef.current = null
+            setBusy(false)
+            alert("语音输入：" + err)
+          },
+          function () {
+            // 识别结束（stop 或自然结束），复位状态
+            recRef.current = null
+            setBusy(false)
+          }
+        )
+        recRef.current = rec
+        if (!rec) setBusy(false)
+      }
+      return el("button", { className: "dsh-vision-btn", onClick: toggle, title: busy ? "点击结束语音输入" : "语音输入", style: { fontSize: "13px", opacity: busy ? ".6" : "1" } }, busy ? "⏹" : "🎤")
     }
 
     var remote = null
@@ -828,7 +877,8 @@ window.__ModuleLoader__.load({
           return slots.register({ name: "settings.section", id: id, order: order, label: function () { return label } }, function () { return React.createElement(Component) })
         })
       }
-      section("dsh-balance", 30, "余额 / 用量", BalanceSection)
+      // 余额/用量已由 @hunterchcl/dsh-usage-meter 插件提供（余额+会话用量+计价，更完整），此处不再重复注册
+      // section("dsh-balance", 30, "余额 / 用量", BalanceSection)
       section("dsh-update", 40, "检查更新", UpdateSection)
       section("dsh-projects", 2, "项目", ProjectsSection)
       section("dsh-tools", 35, "Tool 市场", ToolsSection)
@@ -858,6 +908,14 @@ window.__ModuleLoader__.load({
         )
       })
 
+      // 语音输入按钮：麦克风图标 → 语音转文字填入输入框
+      ctx.slots.inject("conversation.input.left", function () {
+        return ctx.slots.register(
+          { name: "conversation.input.left", id: "dsh-voice", order: 120, label: function () { return "语音输入" } },
+          function () { return React.createElement(VoiceInputButton) }
+        )
+      })
+
       // 附件卡片栏：输入区上方显示图标 + 标题 + 叉叉（千问样式）
       ctx.slots.inject("conversation.input.dock", function () {
         return ctx.slots.register(
@@ -866,28 +924,49 @@ window.__ModuleLoader__.load({
         )
       })
 
-      // 全局拖拽：仅拦截 docx/xlsx/pptx/pdf/txt 等文档（图标卡片方案，不解析内容）；图片等留给原生聊天框
+      // 全局拖拽：仅拦截 docx/xlsx/pptx/pdf/txt 等文档（图标卡片方案）。
+      // 关键：在 capture 阶段 stopPropagation 阻止原生的 dragenter/dragover，避免弹出原生「图片拖到此处」遮罩；
+      // 图片等其它文件不拦截，走原生（图片拖拽遮罩 + 原生图片附件）。
       if (typeof document !== "undefined") {
-        document.addEventListener("dragover", function (e) {
+        function docFileIn(e) {
           try {
-            var types = e.dataTransfer && e.dataTransfer.types
-            if (!types || Array.prototype.indexOf.call(types, "Files") === -1) return
-            var items = e.dataTransfer.items
+            var items = e.dataTransfer && e.dataTransfer.items
+            if (!items) return false
             for (var i = 0; i < items.length; i++) {
               var f = items[i] && items[i].getAsFile && items[i].getAsFile()
-              if (f && DOC_RE.test(f.name || "")) { e.preventDefault(); return }
+              if (f && DOC_RE.test(f.name || "")) return true
             }
           } catch (e2) {}
-        }, true)
+          return false
+        }
+        document.addEventListener("dragenter", function (e) { if (docFileIn(e)) e.stopPropagation() }, true)
+        document.addEventListener("dragover", function (e) { if (docFileIn(e)) { e.preventDefault(); e.stopPropagation() } }, true)
+        document.addEventListener("dragleave", function (e) { if (docFileIn(e)) e.stopPropagation() }, true)
         document.addEventListener("drop", function (e) {
           try {
-            var files = e.dataTransfer && e.dataTransfer.files
-            if (!files || files.length === 0) return
-            var docs = Array.prototype.slice.call(files).filter(function (f) { return DOC_RE.test(f.name || "") })
-            if (docs.length === 0) return // 图片等 → 原生处理
+            if (!docFileIn(e)) return // 图片等 → 原生处理
             e.preventDefault()
             e.stopPropagation()
-            addAttachments(docs)
+            var files = e.dataTransfer && e.dataTransfer.files
+            addAttachments(files)
+          } catch (e2) {}
+        }, true)
+
+        // 发送监听：发送前把附件文件名注入 draft，发送后图标卡片自动清空
+        document.addEventListener("keydown", function (e) {
+          try {
+            if (e.key !== "Enter" || e.shiftKey || e.ctrlKey || e.metaKey) return
+            var ta = document.activeElement
+            if (!ta || ta.tagName !== "TEXTAREA" || !ta.closest("[data-composer-seat]")) return
+            flushAttachmentsToDraft()
+          } catch (e2) {}
+        }, true)
+        document.addEventListener("mousedown", function (e) {
+          try {
+            var el = e.target
+            if (!el || el.tagName !== "BUTTON") return
+            var txt = (el.textContent || "") + " " + (el.getAttribute("aria-label") || "") + " " + (el.title || "")
+            if (/发送|Send|停止|Stop/i.test(txt)) flushAttachmentsToDraft()
           } catch (e2) {}
         }, true)
       }

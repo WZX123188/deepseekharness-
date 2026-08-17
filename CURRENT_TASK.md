@@ -2,28 +2,27 @@
 
 > 维护规则：开始长任务填写；每步更新；完成改状态「无任务 / 已完成」。新会话自动读本文件。
 
-## 状态：进行中 — 任务二（5.0.0 手机App + 远程通信）
+## 状态：进行中 — v5.2.0 大改
 
 ### 任务目标
-用户授权自主执行到关机：① 视图+拖拽收尾 → 4.0.0 → GitHub+release；② 手机App（APK云构建+PWA）+远程通信（3191服务+配对码+免费隧道）→ 5.0.0；③ 语音转文字（电脑+手机）→ 5.1.0；最后关机。
+完成 v5.2.0：① 峰谷定价默认开；② Tailscale 引导页；③ 手机独立移动 UI（防误触，类似微信手机版，App+网页共用，与电脑共用后端实时同步+双向传文件）；④ 手机电脑同时用+同步+传文件；⑤ 图标全换小蓝鲸（C:\Users\WZX\.dsh\deepseek-whale.ico）；⑥ 修复局域网连不上（中文冒号纠错+防火墙放行）+网页版无连接页；⑦ 语音点击开始→再点击结束。全部做完打包 5.2.0，之前未上传版本全部上传 GitHub。
 
 ### 进度
-- [x] 任务一：视图/拖拽实测通过（识图真实key+模型回退+附件缓存）→ 同步 → 4.0.0打包（portable-4.0.0-win-x64.zip）
-- [x] 任务一：git commit aedd100 + tag v4.0.0（26文件，大目录已 gitignore 排除）
-- [ ] 任务一：GitHub push + release（**网络不可达**，待网络恢复执行 push-release.ps1 -Tag v4.0.0）
-- [ ] 任务二：电脑端 3191 通信服务（配对码+加密+聊天SSE+文件浏览/下载）
-- [ ] 任务二：手机网页 PWA（聊天界面+文件列表+配对码，本地浏览器可测）
-- [ ] 任务二：安卓 WebView 项目 + GitHub Actions 云构建 APK
-- [ ] 任务二：免费隧道方案（局域网直连 + Tailscale 说明）
-- [ ] 任务二：测试 → 聊天记录 → 5.0.0 → GitHub+release
-- [ ] 任务三：语音转文字（电脑+手机+麦克风权限+对话框图标）→ 5.1.0
-- [ ] 收尾：最终聊天记录 → 关机
+- [ ] 查 git 状态（哪些版本没上传）
+- [ ] ⑦ 语音开始/结束（改 plugin-static VoiceInputButton）
+- [ ] ① 峰谷默认开（改 usage-meter host.js）
+- [ ] ⑤ 图标换小蓝鲸（客户端 icon.ico + App + PWA + 托盘）
+- [ ] ⑥ 局域网连不上：中文冒号纠错 + Windows 防火墙放行；网页版无连接页修复
+- [ ] ② Tailscale 引导页（什么是/为什么/一步步）
+- [ ] ③④ 手机独立移动 UI（聊天+文件+设置+上传）+ 实时同步 + 双向传文件
+- [ ] test-env 验证 + 同步
+- [ ] 打包 5.2.0（本地 release 只留最新两个）
+- [ ] 上传 GitHub（补传未上传版本 + 5.2.0）
 
 ### 下一步
-写电脑端 3191 远程通信服务（plugin-static index.js 新增 RemoteControl 服务：配对码生成/验证、token 加密、聊天 SSE、文件浏览/下载 API）。
+先查 git 状态，然后做快的（语音/峰谷/图标/防火墙/中文冒号），再做移动端大改。
 
 ### 产物路径
-- 4.0.0：`G:\dsh客户端\desktop\release\DeepSeekClient-portable-4.0.0-win-x64.zip` ✓
-- 手机端项目：`G:\dsh客户端\mobile\`（PWA + 安卓 WebView）
-- 推送脚本：`G:\dsh客户端\push-release.ps1`（网络恢复后执行）
-- GitHub：`WZX123188/deepseekharness-`（tag v4.0.0 已建，push 待网络）
+- 5.2.0：`G:\dsh客户端\desktop\release\DeepSeekClient-portable-5.2.0-win-x64.zip`
+- 手机端：`G:\dsh客户端\mobile\`（移动 UI + 安卓 + PWA）
+- GitHub：`WZX123188/deepseekharness-`

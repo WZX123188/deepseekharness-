@@ -86,7 +86,8 @@ export class DshClientFeaturesService extends TypertRemoteService {
 
   async loadPermissionMode() {
     try {
-      const cfg = await this.readJsonFile(CONFIG_PATH)
+      let cfg = {}
+      try { cfg = JSON.parse(readFileSync(CONFIG_PATH, 'utf8')) } catch (e) {}
       permissionMode = (cfg && cfg.permissionMode === 'trust') ? 'trust' : 'ask'
       visionKey = (cfg && typeof cfg.visionKey === 'string') ? cfg.visionKey : ''
     } catch (e) {}
@@ -172,12 +173,11 @@ export class DshClientFeaturesService extends TypertRemoteService {
   }
 
   async readJsonFile(p) {
-    const { stdout } = await this.runNode("try{console.log(require('fs').readFileSync(process.env.DSH_F,'utf8'))}catch(e){console.log('{}')}", { DSH_F: p }, 8000)
-    try { return JSON.parse(stdout.trim() || '{}') } catch (e) { return {} }
+    try { return JSON.parse(readFileSync(p, 'utf8')) } catch (e) { return {} }
   }
 
   async writeJsonFile(p, obj) {
-    await this.runNode("try{require('fs').writeFileSync(process.env.DSH_F, process.env.DSH_V)}catch(e){console.error(e)}", { DSH_F: p, DSH_V: JSON.stringify(obj) }, 8000)
+    try { writeFileSync(p, JSON.stringify(obj), 'utf8') } catch (e) {}
   }
 
   async getPermissionMode() {
@@ -494,7 +494,37 @@ export class DshClientFeaturesService extends TypertRemoteService {
       const safe = path.basename(filename).replace(/[\\/:*?"<>|]/g, '_')
       const dest = path.join(dir, Date.now() + '-' + Math.floor(Math.random() * 1e6) + '_' + safe)
       writeFileSync(dest, Buffer.from(raw, 'base64'))
+      // 记录到 index.json，供 agent 读取（agent 回答文件相关问题前先读这里找到文件）。不截断，保留全部有效记录。
+      try {
+        const idxFile = path.join(dir, 'index.json')
+        let idx = []
+        try { idx = JSON.parse(readFileSync(idxFile, 'utf8')) } catch (e) {}
+        if (!Array.isArray(idx)) idx = []
+        idx.push({ name: filename, path: dest, ts: Date.now() })
+        writeFileSync(idxFile, JSON.stringify(idx, null, 2))
+      } catch (e) {}
       return { ok: true, path: dest, name: filename }
+    } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
+  }
+
+  // 删除附件：点叉叉移除图标时，删除缓存文件 + 从 index.json 移除记录
+  async deleteAttachment(args) {
+    try {
+      const p = args && args.path
+      if (typeof p !== 'string' || !p) return { ok: false, error: '无效路径' }
+      const dir = path.join(HOME, 'attachments')
+      const norm = path.resolve(p)
+      if (norm.indexOf(path.resolve(dir)) !== 0) return { ok: false, error: '非法路径' }
+      try { unlinkSync(norm) } catch (e) {}
+      try {
+        const idxFile = path.join(dir, 'index.json')
+        let idx = []
+        try { idx = JSON.parse(readFileSync(idxFile, 'utf8')) } catch (e) {}
+        if (!Array.isArray(idx)) idx = []
+        idx = idx.filter((it) => path.resolve(it.path) !== norm)
+        writeFileSync(idxFile, JSON.stringify(idx, null, 2))
+      } catch (e) {}
+      return { ok: true }
     } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
   }
 
@@ -838,12 +868,48 @@ function applyCheckpointInjection(ctx) {
   } catch (e) { console.error('[dsh-static] checkpoint injection failed: ' + String((e && e.message) || e)) }
 }
 
+// 启动时清理超过 7 天的旧附件缓存（文件 + index.json 记录）
+function cleanupOldAttachments() {
+  try {
+    const dir = path.join(HOME, 'attachments')
+    if (!existsSync(dir)) return
+    const now = Date.now()
+    const sevenDays = 7 * 24 * 3600 * 1000
+    const names = readdirSync(dir)
+    for (const n of names) {
+      if (n === 'index.json') continue
+      const full = path.join(dir, n)
+      try {
+        const st = statSync(full)
+        if (now - st.mtimeMs > sevenDays) unlinkSync(full)
+      } catch (e) {}
+    }
+    const idxFile = path.join(dir, 'index.json')
+    let idx = []
+    try { idx = JSON.parse(readFileSync(idxFile, 'utf8')) } catch (e) {}
+    if (!Array.isArray(idx)) idx = []
+    const keep = idx.filter((it) => it.ts && (now - it.ts) <= sevenDays)
+    writeFileSync(idxFile, JSON.stringify(keep, null, 2))
+  } catch (e) {}
+}
+
 export function apply(ctx) {
   try {
     const svc = new DshClientFeaturesService(ctx)
     startLocalRpc(svc)
     applyCheckpointInjection(ctx)
     startRemoteControl(ctx)
+    cleanupOldAttachments()
+    // agent 系统提示：拖入的文档附件缓存位置 + 回答前先读文件
+    try {
+      ctx.inject(["systemPrompt"], (scope) => {
+        scope.systemPrompt.context({
+          name: "dsh-attachments",
+          order: 300,
+          text: () => "用户拖入对话框的文档附件（docx/xlsx/pptx/pdf/txt 等）会缓存在 " + path.join(HOME, 'attachments') + " 目录，其中 index.json 的每个条目是 {name: 原始文件名, path: 本地路径}。当用户消息中出现「【附件】文件名」时，必须先读取该目录的 index.json，按 name 字段找到对应文件的 path，再用文件读取工具读取该文件内容，然后基于文件内容回答用户问题；不要凭空猜测文件内容，也不要把路径展示给用户。"
+        })
+      })
+    } catch (e) { console.error('[dsh-static] attachment prompt inject failed: ' + ((e && e.message) || e)) }
   } catch (e) {
     console.error('[dsh-static] apply FAILED: ' + ((e && e.stack) || e))
   }

@@ -64,6 +64,8 @@ export const TYPERT = {
     direct('parseAttachment', [argsParam()]),
     // v3.0.3 聊天附件本地缓存（返回本地路径供 agent 读取）
     direct('cacheAttachment', [argsParam()]),
+    // v5.1.3 删除附件（点叉叉移除时删文件+记录）
+    direct('deleteAttachment', [argsParam()]),
     // v5.0.0 手机远程信息（配对码+端口+本机IP）
     direct('getRemoteInfo'),
   ],

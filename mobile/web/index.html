@@ -4,77 +4,116 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <meta name="theme-color" content="#4d6bfe">
-<title>DeepSeekClient 手机端</title>
+<title>DSH 手机端</title>
 <link rel="manifest" href="manifest.json">
 <style>
-:root{--blue:#4d6bfe;--bg:#f7f8fa;--card:#fff;--txt:#1f2329;--muted:#8a919f;--line:#e5e7eb}
+:root{--blue:#4d6bfe;--bg:#f5f6f8;--card:#fff;--txt:#1f2329;--muted:#8a919f;--line:#e5e7eb}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-body{margin:0;font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--txt);height:100vh;display:flex;flex-direction:column}
-header{background:var(--blue);color:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;flex:none}
+html,body{margin:0;height:100%}
+body{font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--txt);display:flex;flex-direction:column}
+header{background:var(--blue);color:#fff;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;flex:none;min-height:52px}
 header h1{font-size:17px;margin:0;font-weight:600}
+.hbtn{background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:8px;padding:7px 14px;font-size:14px;cursor:pointer}
 .tabs{display:flex;background:var(--card);border-bottom:1px solid var(--line);flex:none}
-.tabs button{flex:1;padding:12px;border:none;background:none;font-size:15px;color:var(--muted);border-bottom:2px solid transparent;cursor:pointer}
+.tabs button{flex:1;padding:14px;border:none;background:none;font-size:16px;color:var(--muted);border-bottom:2px solid transparent;cursor:pointer;min-height:48px}
 .tabs button.on{color:var(--blue);border-bottom-color:var(--blue);font-weight:600}
-main{flex:1;overflow-y:auto;padding:12px}
-.card{background:var(--card);border-radius:12px;padding:14px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
-.muted{color:var(--muted);font-size:13px}
-input,textarea{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font-size:15px;font-family:inherit;margin-top:8px}
-.btn{background:var(--blue);color:#fff;border:none;border-radius:10px;padding:11px 16px;font-size:15px;cursor:pointer;width:100%;margin-top:10px}
-.btn.ghost{background:transparent;color:var(--blue);border:1px solid var(--blue)}
-.btn:disabled{opacity:.5}
-.msg{padding:10px 12px;border-radius:12px;margin:6px 0;max-width:85%;font-size:15px;line-height:1.5;white-space:pre-wrap;word-break:break-word}
+main{flex:1;overflow-y:auto;padding:14px}
+.card{background:var(--card);border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.muted{color:var(--muted);font-size:14px;line-height:1.6}
+h2{font-size:17px;margin:0 0 10px;font-weight:600}
+h3{font-size:15px;margin:14px 0 6px;font-weight:600}
+input,textarea{width:100%;padding:13px 14px;border:1px solid var(--line);border-radius:12px;font-size:16px;font-family:inherit;margin-top:8px;min-height:48px}
+.bigbtn{background:var(--blue);color:#fff;border:none;border-radius:12px;padding:14px;font-size:17px;cursor:pointer;width:100%;margin-top:12px;min-height:52px;font-weight:600}
+.bigbtn.ghost{background:#fff;color:var(--blue);border:1.5px solid var(--blue)}
+.msg{padding:12px 14px;border-radius:14px;margin:8px 0;max-width:88%;font-size:16px;line-height:1.55;white-space:pre-wrap;word-break:break-word}
 .msg.me{background:var(--blue);color:#fff;margin-left:auto}
 .msg.ai{background:var(--card);border:1px solid var(--line);margin-right:auto}
 #chatBox{display:flex;flex-direction:column}
-.inputbar{display:flex;gap:8px;flex:none;padding:10px 12px;background:var(--card);border-top:1px solid var(--line)}
-.inputbar input{flex:1;margin:0;border-radius:20px}
-.inputbar button{background:var(--blue);color:#fff;border:none;border-radius:20px;padding:0 18px;font-size:15px;cursor:pointer}
-.file{display:flex;align-items:center;justify-content:space-between;padding:11px 4px;border-bottom:1px solid var(--line);cursor:pointer}
-.file .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}
-.file .sz{color:var(--muted);font-size:12px;margin:0 8px}
-.file .dir{color:var(--blue);font-size:12px}
-.breadcrumb{font-size:13px;color:var(--muted);margin-bottom:8px;word-break:break-all}
-a.dl{color:var(--blue);text-decoration:none;font-size:13px}
-.spin{text-align:center;color:var(--muted);padding:20px;font-size:13px}
+.inputbar{display:flex;gap:10px;flex:none;padding:10px 12px;background:var(--card);border-top:1px solid var(--line);align-items:center}
+.inputbar input{flex:1;margin:0;border-radius:24px;min-height:46px}
+.iconbtn{background:transparent;border:none;font-size:26px;cursor:pointer;padding:6px;min-width:44px;min-height:44px}
+.sendbtn{background:var(--blue);color:#fff;border:none;border-radius:24px;padding:0 20px;font-size:16px;cursor:pointer;min-height:46px;font-weight:600}
+.file{display:flex;align-items:center;gap:12px;padding:14px 4px;border-bottom:1px solid var(--line);cursor:pointer;min-height:56px}
+.file .fi{font-size:28px}
+.file .nm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:16px}
+.file .sz{color:var(--muted);font-size:13px;margin:0 8px}
+a.dl{color:var(--blue);text-decoration:none;font-size:15px;padding:8px 4px}
+.breadcrumb{font-size:14px;color:var(--muted);margin-bottom:10px;word-break:break-all}
+.spin{text-align:center;color:var(--muted);padding:24px;font-size:14px}
+.step{display:flex;gap:14px;padding:12px 0;border-bottom:1px solid var(--line);align-items:flex-start}
+.step .num{background:var(--blue);color:#fff;width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;flex:none;font-size:15px}
+.step .txt{font-size:15px;line-height:1.6;flex:1}
+.step .txt b{display:block;margin-bottom:2px}
+.row{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid var(--line);font-size:15px}
+.row .lbl{color:var(--muted)}
+.row .val{font-weight:600;font-variant-numeric:tabular-nums}
 </style>
 </head>
 <body>
-<header><h1>DSH 手机端</h1><span id="connDot" style="font-size:12px;opacity:.85">未连接</span></header>
+
+<!-- 引导页（首次） -->
+<div id="onboardView" style="display:none;flex:1;overflow-y:auto;padding:18px">
+  <div class="card">
+    <h2>🔗 怎么让手机连上电脑</h2>
+    <div class="muted">要用「Tailscale」把手机和电脑组成一个加密的虚拟局域网，人在外面也能安全直连家里的电脑。</div>
+    <div class="card" style="background:#eef1ff;margin-top:12px">
+      <h3>❓ Tailscale 是什么</h3>
+      <div class="muted">一款免费开源的组网工具。装上并登录同一个账号后，你的手机和电脑就像在同一 WiFi 里一样互相访问，数据走端到端加密隧道，不暴露公网、不花一分钱。</div>
+    </div>
+    <h3>📱 一步步来</h3>
+    <div class="step"><div class="num">1</div><div class="txt"><b>电脑装 Tailscale</b>去 tailscale.com 下载 Windows 版安装，注册并登录账号。</div></div>
+    <div class="step"><div class="num">2</div><div class="txt"><b>手机装 Tailscale</b>应用商店搜 Tailscale 安装，登录<u>同一个账号</u>。</div></div>
+    <div class="step"><div class="num">3</div><div class="txt"><b>确认已组网</b>两边都登录后自动组成虚拟局域网，无需其他设置。</div></div>
+    <div class="step"><div class="num">4</div><div class="txt"><b>记下电脑地址</b>电脑端 DSH 客户端 → 设置 →「手机远程」，找到 Tailscale 地址（100.x.x.x:3191）。</div></div>
+    <div class="step"><div class="num">5</div><div class="txt"><b>手机填地址连接</b>下一步输入该地址 + 配对码即可。</div></div>
+    <button class="bigbtn" onclick="finishOnboard()">已了解，开始连接 →</button>
+  </div>
+</div>
 
 <!-- 配对页 -->
-<div id="pairView" style="flex:1;overflow-y:auto;padding:20px">
+<div id="pairView" style="display:none;flex:1;overflow-y:auto;padding:18px">
   <div class="card">
-    <div style="font-size:20px;margin-bottom:10px">🔗 连接电脑</div>
-    <div class="muted">电脑端客户端 → 设置 →「手机远程」，查看配对码和地址。</div>
-    <input id="server" placeholder="电脑地址，如 192.168.1.100:3191 或 tailscale IP:3191">
+    <h2>🔗 连接电脑</h2>
+    <div class="muted">同一 WiFi 填局域网 IP；人在外填 Tailscale 地址（100.x.x.x）。电脑端「手机远程」页有地址和配对码。</div>
+    <input id="server" placeholder="如 192.168.1.100:3191 或 100.64.0.2:3191" inputmode="url" autocapitalize="off" autocomplete="off">
     <input id="code" placeholder="6 位配对码" inputmode="numeric" maxlength="6">
-    <button class="btn" onclick="doPair()">连接</button>
-    <div id="pairMsg" class="muted" style="margin-top:10px"></div>
+    <button class="bigbtn" onclick="doPair()">连接</button>
+    <div id="pairMsg" class="muted" style="margin-top:12px;color:#e5484d"></div>
   </div>
-  <div class="card">
-    <div style="font-weight:600;margin-bottom:8px">📱 远程能做什么</div>
-    <div class="muted" style="line-height:1.8">· 发指令让电脑上的智能体执行（查文件、跑任务）<br>· 浏览电脑文件并下载到手机<br>· 人在外经 Tailscale 组网也能连（免费私密加密）</div>
-  </div>
+  <button class="bigbtn ghost" onclick="showOnboard()">← 返回查看 Tailscale 教程</button>
 </div>
 
 <!-- 主界面 -->
 <div id="mainView" style="display:none;flex:1;flex-direction:column">
+  <header><h1>DSH 手机端</h1><span style="display:flex;gap:10px;align-items:center"><span id="connDot" style="font-size:12px;opacity:.85">已连接</span><button class="hbtn" onclick="switchServer()">切换</button></span></header>
   <div class="tabs">
-    <button id="tabChat" class="on" onclick="showTab('chat')">💬 指令</button>
+    <button id="tabChat" class="on" onclick="showTab('chat')">💬 对话</button>
     <button id="tabFile" onclick="showTab('file')">📁 文件</button>
+    <button id="tabSet" onclick="showTab('set')">⚙️ 设置</button>
   </div>
   <div id="chatView" style="flex:1;display:flex;flex-direction:column">
     <main id="chatBox"></main>
     <div class="inputbar">
-      <button onclick="startVoice()" style="background:transparent;color:#4d6bfe;border:none;font-size:22px;cursor:pointer;padding:0 6px" title="语音输入">🎤</button>
-      <input id="input" placeholder="给电脑发指令…" onkeydown="if(event.key==='Enter')sendMsg()">
-      <button onclick="sendMsg()">发送</button>
+      <button class="iconbtn" onclick="$('upfile').click()" title="上传文件">📎</button>
+      <input type="file" id="upfile" style="display:none" onchange="uploadFile(this)">
+      <input id="input" placeholder="给电脑发消息…" onkeydown="if(event.key==='Enter')sendMsg()">
+      <button class="iconbtn" onclick="toggleVoice()" id="voiceBtn" title="语音">🎤</button>
+      <button class="sendbtn" onclick="sendMsg()">发送</button>
     </div>
   </div>
   <div id="fileView" style="flex:1;display:none;flex-direction:column">
     <main>
+      <button class="bigbtn ghost" onclick="$('upfile2').click()">⬆ 上传文件到电脑</button>
+      <input type="file" id="upfile2" style="display:none" onchange="uploadFile(this)">
       <div class="breadcrumb" id="crumb"></div>
       <div id="fileList"></div>
+    </main>
+  </div>
+  <div id="setView" style="flex:1;display:none;overflow-y:auto">
+    <main>
+      <div class="card"><h2>💰 余额 / 用量</h2><div id="balanceBox"><div class="muted">加载中…</div></div></div>
+      <div class="card"><h2>🖼 识图（视图模式）</h2><div class="muted">智谱视觉 Key（开头无固定格式）。</div><input id="visionKey" placeholder="粘贴智谱 API Key"><button class="bigbtn" onclick="saveVision()">保存 Key</button><div id="visionMsg" class="muted" style="margin-top:8px"></div></div>
+      <div class="card"><h2>🔌 连接</h2><button class="bigbtn ghost" onclick="switchServer()">切换服务器</button></div>
     </main>
   </div>
 </div>
@@ -82,63 +121,104 @@ a.dl{color:var(--blue);text-decoration:none;font-size:13px}
 <script>
 var server='', token='';
 var state = { path:'' };
+var voiceRec = null;
 function $(id){return document.getElementById(id)}
-function load(){ server = localStorage.getItem('dsh_server')||''; token = localStorage.getItem('dsh_token')||''; if(server && token){ $('server').value=server; showMain(); $('connDot').textContent='已连接'; refreshStatus(); } }
-function api(path, data){
-  return fetch('http://'+server+path, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(Object.assign({token:token},data||{})) }).then(function(r){ return r.json() });
+
+function normalizeAddr(s){
+  return String(s||'').replace(/[\uFF01-\uFF5E]/g,function(c){return String.fromCharCode(c.charCodeAt(0)-0xFEE0)}).replace(/\s+/g,'').trim();
 }
+function rpcAddr(){ var ip=(server||'').split(':')[0]||'127.0.0.1'; return 'http://'+ip+':3192/dsh-rpc'; }
+
+function showOnboard(){ $('onboardView').style.display='flex'; $('pairView').style.display='none'; $('mainView').style.display='none'; }
+function finishOnboard(){ localStorage.setItem('dsh_onboarded','1'); $('onboardView').style.display='none'; $('pairView').style.display='flex'; }
+function showPair(msg){ $('onboardView').style.display='none'; $('pairView').style.display='flex'; $('mainView').style.display='none'; $('connDot').textContent='未连接'; if(msg)$('pairMsg').textContent=msg; }
+function showMain(){ $('pairView').style.display='none'; $('onboardView').style.display='none'; $('mainView').style.display='flex'; }
+function switchServer(){ localStorage.removeItem('dsh_token'); token=''; $('code').value=''; showPair(''); }
+
+function load(){
+  server = localStorage.getItem('dsh_server')||''; token = localStorage.getItem('dsh_token')||'';
+  if(!localStorage.getItem('dsh_onboarded')){ showOnboard(); return; }
+  if(server && token){
+    $('server').value=server;
+    fetch('http://'+server+'/api/status',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
+      .then(function(r){return r.json()}).then(function(j){ if(j&&j.ok){ showMain(); loadBalance(); loadVision(); } else showPair('连接失败，请重新输入'); })
+      .catch(function(){ showPair('无法连接 '+server+'，请重新输入地址和配对码'); });
+  } else showPair('');
+}
+
 function doPair(){
-  server = $('server').value.trim(); var code = $('code').value.trim();
+  server = normalizeAddr($('server').value); var code = $('code').value.trim();
   if(!server||!code){ $('pairMsg').textContent='请填写地址和配对码'; return; }
   fetch('http://'+server+'/api/pair',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:code})})
     .then(function(r){return r.json()})
     .then(function(j){
-      if(j&&j.ok&&j.token){ token=j.token; localStorage.setItem('dsh_server',server); localStorage.setItem('dsh_token',token); $('pairMsg').textContent=''; showMain(); $('connDot').textContent='已连接'; addAi('已连接电脑，可发送指令或浏览文件。'); }
-      else { $('pairMsg').textContent='连接失败：'+(j&&j.error||'未知'); }
+      if(j&&j.ok&&j.token){ token=j.token; localStorage.setItem('dsh_server',server); localStorage.setItem('dsh_token',token); $('pairMsg').textContent=''; showMain(); loadBalance(); loadVision(); addAi('已连接电脑 ✓'); }
+      else $('pairMsg').textContent='连接失败：'+(j&&j.error||'未知');
     }).catch(function(e){ $('pairMsg').textContent='无法连接：'+e.message });
 }
-function showMain(){ $('pairView').style.display='none'; $('mainView').style.display='flex'; }
+
+function api(path,data){ return fetch('http://'+server+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.assign({token:token},data||{}))}).then(function(r){return r.json()}); }
+function rpc(method,args){ return fetch(rpcAddr(),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({method:method,args:args||{}})}).then(function(r){return r.json()}); }
+
 function showTab(t){
-  $('tabChat').className = t==='chat'?'on':''; $('tabFile').className = t==='file'?'on':'';
-  $('chatView').style.display = t==='chat'?'flex':'none'; $('fileView').style.display = t==='file'?'flex':'none';
+  $('tabChat').className = t==='chat'?'on':''; $('tabFile').className = t==='file'?'on':''; $('tabSet').className = t==='set'?'on':'';
+  $('chatView').style.display = t==='chat'?'flex':'none'; $('fileView').style.display = t==='file'?'flex':'none'; $('setView').style.display = t==='set'?'block':'none';
   if(t==='file') listDir('');
 }
-function addMsg(text, cls){ var d=document.createElement('div'); d.className='msg '+cls; d.textContent=text; $('chatBox').appendChild(d); $('chatBox').scrollTop=$('chatBox').scrollHeight; }
-function addAi(t){ addMsg(t,'ai') } 
-function sendMsg(){ var t=$('input').value.trim(); if(!t) return; addMsg(t,'me'); $('input').value=''; api('/api/chat/send',{text:t}).then(function(j){ if(j&&j.ok){ pollReply(); } else addAi('发送失败：'+(j&&j.error||'')); }); }
-function startVoice(){
-  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if(!SR){ alert('当前浏览器不支持语音识别'); return; }
-  var rec = new SR();
-  rec.lang = 'zh-CN';
-  rec.interimResults = false;
-  rec.onresult = function(e){ try{ var t=e.results[0][0].transcript; if(t){ $('input').value += t; } }catch(err){} };
-  rec.onerror = function(e){ alert('语音识别失败：'+(e.error||'请检查麦克风权限')); };
-  try{ rec.start(); }catch(err){ alert('无法启动麦克风，请授权麦克风权限'); }
-}
+function addMsg(text,cls){ var d=document.createElement('div'); d.className='msg '+cls; d.textContent=text; $('chatBox').appendChild(d); $('chatBox').scrollTop=$('chatBox').scrollHeight; }
+function addAi(t){ addMsg(t,'ai'); }
+function sendMsg(){ var t=$('input').value.trim(); if(!t) return; addMsg(t,'me'); $('input').value=''; api('/api/chat/send',{text:t}).then(function(j){ if(!j||!j.ok) addAi('发送失败：'+(j&&j.error||'')); pollReply(); }); }
+
 var pollTimer=null;
-function pollReply(){ clearInterval(pollTimer); var n=0; pollTimer=setInterval(function(){ api('/api/chat/poll',{}).then(function(j){ if(j&&j.ok&&j.reply){ addAi(j.reply); clearInterval(pollTimer); } else if(++n>60){ clearInterval(pollTimer); } }); },3000); }
+function pollReply(){ clearInterval(pollTimer); var n=0; pollTimer=setInterval(function(){ api('/api/chat/poll',{}).then(function(j){ if(j&&j.ok&&j.reply){ addAi(j.reply); clearInterval(pollTimer); } else if(++n>40){ clearInterval(pollTimer); } }); },2500); }
+
+function toggleVoice(){
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(voiceRec){ try{voiceRec.stop()}catch(e){}; voiceRec=null; $('voiceBtn').textContent='🎤'; return; }
+  if(!SR){ alert('当前浏览器不支持语音识别'); return; }
+  var rec = new SR(); rec.lang='zh-CN'; rec.interimResults=false;
+  rec.onresult=function(e){ try{ var t=e.results[0][0].transcript; if(t) $('input').value += t; }catch(err){} };
+  rec.onerror=function(){ $('voiceBtn').textContent='🎤'; voiceRec=null; alert('语音识别失败，请检查麦克风权限'); };
+  rec.onend=function(){ $('voiceBtn').textContent='🎤'; voiceRec=null; };
+  try{ rec.start(); voiceRec=rec; $('voiceBtn').textContent='⏹'; }catch(err){ alert('无法启动麦克风，请授权'); }
+}
+
+function uploadFile(inp){
+  var f = inp.files && inp.files[0]; if(!f) return;
+  if(f.size > 100*1024*1024){ alert('文件超过 100MB'); return; }
+  var rd = new FileReader();
+  rd.onload = function(){
+    rpc('cacheAttachment',{filename:f.name, data:rd.result}).then(function(j){
+      if(j&&j.ok){ addAi('📎 已上传文件：'+f.name); } else addAi('上传失败：'+(j&&j.error||'')); 
+    });
+  };
+  rd.readAsDataURL(f); inp.value='';
+}
+
 function listDir(p){
-  state.path = p||'';
-  $('crumb').textContent = '📂 '+(state.path||'(默认目录)');
+  state.path = p||''; $('crumb').textContent='📂 '+(state.path||'(默认目录)');
   $('fileList').innerHTML='<div class="spin">加载中…</div>';
   api('/api/files/list',{path:state.path}).then(function(j){
     if(!j||!j.ok){ $('fileList').innerHTML='<div class="muted">'+(j&&j.error||'失败')+'</div>'; return; }
-    state.path=j.path||'';
-    $('crumb').textContent='📂 '+state.path;
+    state.path=j.path||''; $('crumb').textContent='📂 '+state.path;
     var html='';
-    if(state.path){ html+='<div class="file" onclick="listDir(\''+encodeURIComponent(parentOf(state.path))+'\')"><span class="nm">⬆ 上级目录</span></div>'; }
+    if(state.path){ html+='<div class="file" onclick="listDir(\''+encodeURIComponent(parentOf(state.path))+'\')"><span class="fi">⬆</span><span class="nm">上级目录</span></div>'; }
     (j.entries||[]).forEach(function(e){
-      if(e.isDir){ html+='<div class="file" onclick="listDir(\''+encodeURIComponent(e.path)+'\')"><span class="nm">📁 '+esc(e.name)+'</span><span class="dir">目录</span></div>'; }
-      else { html+='<div class="file"><span class="nm">📄 '+esc(e.name)+'</span><span class="sz">'+fmt(e.size)+'</span><a class="dl" href="http://'+server+'/api/files/download?token='+token+'&path='+encodeURIComponent(e.path)+'">下载</a></div>'; }
+      if(e.isDir){ html+='<div class="file" onclick="listDir(\''+encodeURIComponent(e.path)+'\')"><span class="fi">📁</span><span class="nm">'+esc(e.name)+'</span></div>'; }
+      else { html+='<div class="file"><span class="fi">📄</span><span class="nm">'+esc(e.name)+'</span><span class="sz">'+fmt(e.size)+'</span><a class="dl" href="http://'+server+'/api/files/download?token='+token+'&path='+encodeURIComponent(e.path)+'">下载</a></div>'; }
     });
     $('fileList').innerHTML=html||'<div class="muted">空目录</div>';
   });
 }
-function parentOf(p){ var i=p.lastIndexOf('\\'); if(i<0) i=p.lastIndexOf('/'); return i>0?p.slice(0,i):''; }
+
+function loadBalance(){ rpc('deepseekBalance').then(function(j){ if(j&&j.ok){ try{ var b=JSON.parse(j.body); var infos=b.balance_infos||[]; var h=''; infos.forEach(function(i){ h+='<div class="row"><span class="lbl">'+(i.currency||'')+' 余额</span><span class="val">'+(i.total_balance||'0')+'</span></div>'; }); $('balanceBox').innerHTML=h||'<div class="muted">未返回余额</div>'; } catch(e){ $('balanceBox').innerHTML='<div class="muted">解析失败</div>'; } } else $('balanceBox').innerHTML='<div class="muted">'+(j&&j.error||'查询失败')+'</div>'; }); }
+function loadVision(){ rpc('getVisionStatus').then(function(j){ if(j&&j.ok&&j.configured){ $('visionKey').placeholder='已配置（留空则不变）'; } }); }
+function saveVision(){ var k=$('visionKey').value.trim(); if(!k){ $('visionMsg').textContent='请输入 Key'; return; } rpc('setVisionKey',{key:k}).then(function(j){ $('visionMsg').textContent = (j&&j.ok)?'已保存 ✓':'失败：'+(j&&j.error||''); $('visionKey').value=''; loadVision(); }); }
+
+function parentOf(p){ var i=p.lastIndexOf('\\'); if(i<0)i=p.lastIndexOf('/'); return i>0?p.slice(0,i):''; }
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 function fmt(n){ if(n<1024)return n+' B'; if(n<1048576)return (n/1024).toFixed(1)+' KB'; if(n<1073741824)return (n/1048576).toFixed(1)+' MB'; return (n/1073741824).toFixed(2)+' GB'; }
-function refreshStatus(){ api('/api/status',{}).catch(function(){}); }
+
 load();
 </script>
 </body>
