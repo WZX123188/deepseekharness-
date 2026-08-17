@@ -64,7 +64,7 @@ public class MainActivity extends Activity {
         webView.setDownloadListener(new DownloadListener() {
             @Override
             public void onDownloadStart(String url, String userAgent, String contentDisposition, String mimetype, long contentLength) {
-                downloadAndOpen(url, nameFromUrl(url));
+                doDownloadAndOpen(url, nameFromUrl(url));
             }
         });
 
