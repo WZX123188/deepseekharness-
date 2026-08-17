@@ -3,7 +3,7 @@ name: Build Android APK
 on:
   push:
     tags:
-      - 'v5*'
+      - 'v*'
   workflow_dispatch:
 
 permissions:
