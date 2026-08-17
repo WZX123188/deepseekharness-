@@ -10381,7 +10381,7 @@ function doPair(){
 }
 
 // ===== 扫码连接（扫电脑端「手机远程」页二维码，自动登录）=====
-var scanStream = null, scanTimer = null;
+var scanStream = null, scanTimer = null, scanFocusTimer = null;
 function startScan(){
   if(!window.jsQR){ alert('扫码组件未加载，请刷新页面或改用手机浏览器'); return; }
   if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ alert('当前浏览器/WebView 不支持摄像头'); return; }
@@ -10393,14 +10393,11 @@ function startScan(){
     scanStream = stream;
     var v = $('scanVideo');
     v.srcObject = stream; v.play();
-    // 强制连续对焦（部分安卓 WebView/浏览器支持）
-    try {
-      var track = stream.getVideoTracks()[0];
-      var caps = track.getCapabilities ? track.getCapabilities() : null;
-      if(caps && caps.focusMode && caps.focusMode.indexOf('continuous') >= 0){
-        track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(function(){});
-      }
-    } catch(e){}
+    var track = stream.getVideoTracks()[0];
+    function focus(mode){ try { if (track && track.applyConstraints) track.applyConstraints({ advanced: [{ focusMode: mode }] }).catch(function(){}); } catch(e){} }
+    focus('continuous');
+    // 每 2 秒自动对焦一次（auto 触发单次对焦后回 continuous）
+    scanFocusTimer = setInterval(function(){ focus('auto'); focus('continuous'); }, 2000);
     $('scanMask').style.display = 'flex';
     var canvas = document.createElement('canvas');
     var ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -10421,6 +10418,7 @@ function startScan(){
 }
 function stopScan(){
   if(scanTimer){ clearInterval(scanTimer); scanTimer = null; }
+  if(scanFocusTimer){ clearInterval(scanFocusTimer); scanFocusTimer = null; }
   if(scanStream){ try{ scanStream.getTracks().forEach(function(t){ t.stop(); }); }catch(e){} scanStream = null; }
   $('scanMask').style.display = 'none';
 }
@@ -10447,8 +10445,16 @@ function showTab(t){
 // 渲染一条消息（user/assistant/thinking/file）
 function renderMsg(m){
   if(m.role==='file'){
-    var f=document.createElement('div'); f.className='filecard';
-    f.innerHTML='<span class="fi">📄</span><span class="nm">'+esc(m.name)+'</span><a class="dl" href="http://'+server+'/api/files/download?token='+token+'&path='+encodeURIComponent(m.path)+'">下载</a>';
+    var url = 'http://'+server+'/api/files/download?token='+token+'&path='+encodeURIComponent(m.path);
+    var f=document.createElement('div'); f.className='filecard'; f.style.cursor='pointer';
+    f.innerHTML='<span class="fi">📄</span><span class="nm">'+esc(m.name)+'</span><span class="dl">打开</span>';
+    f.onclick = function(){
+      if(window.AndroidBridge && window.AndroidBridge.downloadAndOpen){
+        window.AndroidBridge.downloadAndOpen(url, m.name);
+      } else {
+        var a=document.createElement('a'); a.href=url; a.download=m.name; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      }
+    };
     $('chatBox').appendChild(f); $('chatBox').scrollTop=$('chatBox').scrollHeight; return;
   }
   var cls = m.role==='user'?'me':(m.role==='thinking'?'think':'ai');
@@ -10537,18 +10543,18 @@ function pollChat(){
 function toggleVoice(){
   // 停止
   if(voiceRec){
-    if(window.AndroidSpeech && window.AndroidSpeech.stopSpeech){ try{ window.AndroidSpeech.stopSpeech(); }catch(e){} }
+    if(window.AndroidBridge && window.AndroidBridge.stopSpeech){ try{ window.AndroidBridge.stopSpeech(); }catch(e){} }
     else { try{ voiceRec.stop(); }catch(e){} }
     voiceRec=null; $('voiceBtn').textContent='🎤'; return;
   }
   // Android 原生语音识别（WebView 不支持 SpeechRecognition，走 JSBridge）
-  if(window.AndroidSpeech && window.AndroidSpeech.startSpeech){
+  if(window.AndroidBridge && window.AndroidBridge.startSpeech){
     window.__onSpeechEvent = function(ev){
       if(ev === 'ready'){ $('voiceBtn').textContent='⏹'; }
       else if(ev.indexOf('result:') === 0){ var t=ev.slice(7); if(t) $('input').value += t; $('voiceBtn').textContent='🎤'; voiceRec=null; }
       else if(ev.indexOf('error:') === 0){ alert(ev.slice(6)); $('voiceBtn').textContent='🎤'; voiceRec=null; }
     };
-    try{ window.AndroidSpeech.startSpeech(); voiceRec={native:true}; }catch(e){ alert('无法启动语音识别'); }
+    try{ window.AndroidBridge.startSpeech(); voiceRec={native:true}; }catch(e){ alert('无法启动语音识别'); }
     return;
   }
   // 网页版 SpeechRecognition
