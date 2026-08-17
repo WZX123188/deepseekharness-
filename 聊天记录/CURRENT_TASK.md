@@ -2,19 +2,35 @@
 
 > 维护规则：开始长任务填写；每步更新；完成改状态「无任务 / 已完成」。新会话自动读本文件。
 
-## 状态：无任务 / 已完成
+## 状态：进行中（v5.3.3 手机收不到回复 + 布局固定 + 完全态增强）
 
-### 最近完成（v5.3.2 手机发消息电脑收不到）
-- 根因：`ctx.on('agent/created', (carrier, ev) => ...)` 签名写错，实际 cordis 回调只收一个参数 `{ agent }`，
-  导致 `latestAgent` 恒 null → 手机消息走「暂存收件箱」分支收不到；另 `inject` 不唤醒 agent，改 `followup`。
-- 修复并同步三处 index.js，版本 5.3.2，打包便携 zip，commit + tag v5.3.2 + push。
-- **实测通过**：用户重启桌面端后，用手机发「测试」「这里是手机，测试」两条消息，电脑端 agent 成功收到并回复；断点自动汇报（applyCheckpointInjection 同签名 bug）也一并修复生效。
+### 本次修复（v5.3.3）
+- **手机收不到回复**：根因 `getChatMessages` 解析 `assistant/message` 事件时用 `ev.data.content`，但该事件的
+  data 是 `{ message: {...} }` 包裹（dsh-session 里 `user/message` 用 `record`、其余用 `record.message`），
+  导致 assistant 文本取不到被过滤。改为 `rec.message || rec`，且只取 `type==='text'` 块（过滤 reasoning 思考/tool-call）。
+- **手机端布局固定**：顶部 tab（对话/文件/设置）+ 底部输入框固定，长文本只在中间内容区滚动。
+  改法：`html,body{overflow:hidden}` + `body{height:100vh;100dvh}` + 各 flex 容器 `min-height:0` + `main` 滚动。
+- **完全态增强**：手机设置页「🔌 连接」卡片显示电脑地址列表（Tailscale 100.x / 局域网 IP，点一下复制），
+  用 `getRemoteInfo` 的 ips + port。
+
+### 已改文件（已同步）
+- plugin-static/lib/index.js（getChatMessages 解析 + /api/status 5.3.3）—— resources / desktop\plugin-static / 正式 profile 三处
+- mobile/web/index.html（CSS 布局 + 电脑地址）—— mobile\web 源 / resources\plugin-static\mobile\web / desktop\plugin-static\mobile\web / 正式 profile 四处
+- desktop/package.json 版本 5.3.3
+
+### 已验证
+- node --check 通过；解析单测 PASS（assistant data.message 包裹 + reasoning 过滤 + 旧结构兼容 + tool/result 忽略）
+- test-env（3197/3193/3195）：插件加载正常、/mobile 含新标记(100dvh/loadRemoteInfo/addrList)、getChatMessages/getRemoteInfo 端点正常
+
+### 待办（本任务收尾）
+- [ ] 打包（已 done：--win --dir + make-portable，release 保留 5.3.2/5.3.3）
+- [ ] git commit + tag v5.3.3 + push
+- [ ] 用户重启桌面端后实测：手机能收到回复、顶部/底部固定、设置页能看到电脑地址
 
 ### 后续需求（下次继续，举一反三）
 - App 图标换小蓝鲸（ico→png + mipmap）
 - 手机端补充：意见区、使用指南、市场、壁纸、PDF/Office 翻译
 - 二维码扫码直连
-- Tailscale 地址加入「手机远程」页（当前只显示局域网 IP）
 - 手机端历史消息持久化（本地 localStorage 保存对话）
 - （可选）多会话时让手机消息发到「当前活动会话」而非仅最新创建的 agent
 

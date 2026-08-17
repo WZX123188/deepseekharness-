@@ -561,14 +561,17 @@ export class DshClientFeaturesService extends TypertRemoteService {
       const msgs = []
       for (const ev of events) {
         if (!ev || !ev.data) continue
+        // 注意：user/message 的 data 直接是消息对象；assistant/message 的 data 是 { message: {...}, ... } 包裹。
+        // 只取 type==='text' 的块，跳过 reasoning（思考）/tool-call 等，避免手机端显示思考过程。
+        const rec = ev.data || {}
+        const msg = ev.type === 'user/message' ? rec : (rec.message || rec)
+        const parts = (msg && msg.content) || []
+        const txt = parts.filter((c) => c && c.type === 'text' && typeof c.text === 'string').map((c) => c.text).join(' ').trim()
+        if (!txt) continue
         if (ev.type === 'user/message') {
-          const parts = ev.data.content || []
-          const txt = parts.map((c) => (c && typeof c.text === 'string') ? c.text : '').join(' ').trim()
-          if (txt && txt.indexOf('【自动续跑检查】') !== 0) msgs.push({ role: 'user', text: txt })
+          if (txt.indexOf('【自动续跑检查】') !== 0) msgs.push({ role: 'user', text: txt })
         } else if (ev.type === 'assistant/message') {
-          const parts = ev.data.content || []
-          const txt = parts.map((c) => (c && typeof c.text === 'string') ? c.text : '').join(' ').trim()
-          if (txt) msgs.push({ role: 'assistant', text: txt })
+          msgs.push({ role: 'assistant', text: txt })
         }
       }
       return { ok: true, messages: msgs }
@@ -843,7 +846,7 @@ function startRemoteControl(ctx, svc) {
             if (existsSync(file) && !rel.includes('..')) { res.writeHead(200, { 'Content-Type': mime }); res.end(readFileSync(file)); return }
             return rcJson(res, { ok: false, error: 'not found' }, 404)
           }
-          if (api === '/api/status') return rcJson(res, { ok: true, version: '5.3.2', paired: !!rcCode })
+          if (api === '/api/status') return rcJson(res, { ok: true, version: '5.3.3', paired: !!rcCode })
           if (api === '/api/pair') {
             if (parsed.code === rcCode) return rcJson(res, { ok: true, token: rcToken })
             return rcJson(res, { ok: false, error: '配对码错误' }, 401)

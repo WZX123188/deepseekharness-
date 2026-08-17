@@ -9,15 +9,17 @@
 <style>
 :root{--blue:#4d6bfe;--bg:#f5f6f8;--card:#fff;--txt:#1f2329;--muted:#8a919f;--line:#e5e7eb}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;height:100%}
-body{font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--txt);display:flex;flex-direction:column}
+html,body{margin:0;height:100%;overflow:hidden}
+body{font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--txt);display:flex;flex-direction:column;height:100vh;height:100dvh}
 header{background:var(--blue);color:#fff;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;flex:none;min-height:52px}
 header h1{font-size:17px;margin:0;font-weight:600}
 .hbtn{background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:8px;padding:7px 14px;font-size:14px;cursor:pointer}
 .tabs{display:flex;background:var(--card);border-bottom:1px solid var(--line);flex:none}
 .tabs button{flex:1;padding:14px;border:none;background:none;font-size:16px;color:var(--muted);border-bottom:2px solid transparent;cursor:pointer;min-height:48px}
 .tabs button.on{color:var(--blue);border-bottom-color:var(--blue);font-weight:600}
-main{flex:1;overflow-y:auto;padding:14px}
+main{flex:1;overflow-y:auto;padding:14px;min-height:0;-webkit-overflow-scrolling:touch}
+/* 主界面各层 flex 容器：min-height:0 让内容区正确收缩、内部滚动，顶部/底部固定不随长文本撑开 */
+#mainView,#chatView,#fileView,#setView{min-height:0}
 .card{background:var(--card);border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
 .muted{color:var(--muted);font-size:14px;line-height:1.6}
 h2{font-size:17px;margin:0 0 10px;font-weight:600}
@@ -115,7 +117,7 @@ a.dl{color:var(--blue);text-decoration:none;font-size:15px;padding:8px 4px}
       <div class="card"><h2>🖼 识图（视图模式）</h2><div class="muted">智谱视觉 Key（开头无固定格式，保存后与电脑端同步）。</div><input id="visionKey" placeholder="粘贴智谱 API Key"><button class="bigbtn" onclick="saveVision()">保存 Key</button><div id="visionMsg" class="muted" style="margin-top:8px"></div></div>
       <div class="card"><h2>🔒 权限模式</h2><div class="muted">敏感操作（写/改/删文件）是否需确认，与电脑端同步。</div><button class="bigbtn" id="permToggle" onclick="togglePerm()">加载中…</button></div>
       <div class="card"><h2>🔄 检查更新</h2><div id="updateBox"><div class="muted">加载中…</div></div></div>
-      <div class="card"><h2>🔌 连接</h2><button class="bigbtn ghost" onclick="switchServer()">切换服务器</button></div>
+      <div class="card"><h2>🔌 连接</h2><div class="muted" style="margin-bottom:6px">当前连接：<span id="curServer" style="font-weight:600;color:var(--txt)">-</span></div><div id="addrList"></div><button class="bigbtn ghost" onclick="switchServer()">切换服务器</button></div>
     </main>
   </div>
 </div>
@@ -244,7 +246,23 @@ function saveVision(){ var k=$('visionKey').value.trim(); if(!k){ $('visionMsg')
 function loadPerm(){ rpc('getPermissionMode').then(function(j){ if(j&&j.ok){ $('permToggle').textContent = (j.mode==='trust') ? '当前：完全信任 ✓（点击改为需确认）' : '当前：敏感操作需确认（点击改为完全信任）'; } }); }
 function togglePerm(){ rpc('getPermissionMode').then(function(j){ var next=(j&&j.mode==='trust')?'ask':'trust'; rpc('setPermissionMode',{mode:next}).then(function(){ loadPerm(); }); }); }
 function loadUpdate(){ rpc('checkUpdate').then(function(j){ if(j&&j.ok){ var o=j.official||{}; var g=j.github||{}; $('updateBox').innerHTML='<div class="row"><span class="lbl">官方版本</span><span class="val">'+(o.latest||'?')+'</span></div><div class="row"><span class="lbl">GitHub 最新</span><span class="val">'+(g.tag||'无')+'</span></div>'; } else $('updateBox').innerHTML='<div class="muted">'+(j&&j.error||'查询失败')+'</div>'; }); }
-function refreshSettings(){ loadBalance(); loadVision(); loadPerm(); loadUpdate(); }
+function loadRemoteInfo(){
+  $('curServer').textContent = server || '-';
+  rpc('getRemoteInfo').then(function(j){
+    if(!j||!j.ok){ $('addrList').innerHTML=''; return; }
+    var port=j.port||3191, ips=j.ips||[];
+    var h='<div class="muted" style="margin:6px 0 4px">电脑地址（点击复制，人在外填 100.x 开头的 Tailscale 地址）：</div>';
+    if(ips.length){ ips.forEach(function(ip){ h+='<div class="file" onclick="copyAddr(\''+ip+':'+port+'\')"><span class="fi">🖥</span><span class="nm">'+esc(ip+':'+port)+'</span><span class="sz">复制</span></div>'; }); }
+    else h+='<div class="muted">未获取到电脑 IP，请在电脑端「手机远程」页查看</div>';
+    $('addrList').innerHTML=h;
+  });
+}
+function copyAddr(t){
+  function done(){ alert('已复制：'+t); }
+  function fallback(){ var ta=document.createElement('textarea'); ta.value=t; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.focus(); ta.select(); try{ document.execCommand('copy'); done(); }catch(e){ alert('复制失败，请手动复制：'+t); } document.body.removeChild(ta); }
+  if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(done,function(){ fallback(); }); } else fallback();
+}
+function refreshSettings(){ loadBalance(); loadVision(); loadPerm(); loadUpdate(); loadRemoteInfo(); }
 
 function parentOf(p){ var i=p.lastIndexOf('\\'); if(i<0)i=p.lastIndexOf('/'); return i>0?p.slice(0,i):''; }
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
