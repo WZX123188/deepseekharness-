@@ -82,12 +82,16 @@ public class MainActivity extends Activity {
             }
         });
 
-        // 语音识别 JSBridge（Android 原生 SpeechRecognizer）
+        // 语音识别 JSBridge（Android 原生 SpeechRecognizer；JSBridge 在非主线程调用，必须切到主线程）
         webView.addJavascriptInterface(new Object() {
             @JavascriptInterface
-            public void startSpeech() { startNativeSpeech(); }
+            public void startSpeech() {
+                runOnUiThread(new Runnable() { @Override public void run() { startNativeSpeech(); } });
+            }
             @JavascriptInterface
-            public void stopSpeech() { stopNativeSpeech(); }
+            public void stopSpeech() {
+                runOnUiThread(new Runnable() { @Override public void run() { stopNativeSpeech(); } });
+            }
             @JavascriptInterface
             public boolean hasSpeech() { return SpeechRecognizer.isRecognitionAvailable(MainActivity.this); }
         }, "AndroidSpeech");

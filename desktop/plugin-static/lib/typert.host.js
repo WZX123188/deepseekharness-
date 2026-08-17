@@ -78,5 +78,10 @@ export const TYPERT = {
     direct('getAgentStatus'),
     direct('listPhoneInbox'),
     direct('pushFileToPhone', [argsParam()]),
+    // v6.2.0 换模型 + 推理强度（与电脑端同步）
+    direct('listModels'),
+    direct('getModelSelection'),
+    direct('setModelSelection', [argsParam()]),
+    direct('speechToText', [argsParam()]),
   ],
 }

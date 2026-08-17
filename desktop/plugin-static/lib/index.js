@@ -705,6 +705,83 @@ export class DshClientFeaturesService extends TypertRemoteService {
     } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
   }
 
+  // 列出可用模型（provider 分组 + 各模型的推理强度），手机端换模型用
+  async listModels() {
+    try {
+      const llm = this.ctx.get('llm')
+      if (!llm || typeof llm.listProviders !== 'function') return { ok: false, error: 'llm 服务不可用' }
+      const catalog = await Promise.all(llm.listProviders().map(async (provider) => {
+        try {
+          const models = await llm.listModels(provider.id)
+          const entries = await Promise.all(models.map(async (model) => {
+            const resolved = await llm.resolveModelInfo(provider.id, model.id)
+            const reasoning = (resolved && resolved.reasoning === void 0) ? void 0 : {
+              efforts: (resolved.reasoning.efforts || []).map((effort) => ({ id: effort.id, name: effort.name, description: effort.description })),
+              ...(resolved.reasoning.defaultEffort === void 0 ? {} : { defaultEffort: resolved.reasoning.defaultEffort })
+            }
+            return { id: model.id, name: model.name, ...(model.description === void 0 ? {} : { description: model.description }), ...(reasoning === void 0 ? {} : { reasoning }) }
+          }))
+          return { kind: 'group', group: { id: provider.id, name: provider.name, models: entries } }
+        } catch (error) {
+          return { kind: 'failure', failure: { id: provider.id, name: provider.name, message: String((error && error.message) || error) } }
+        }
+      }))
+      return {
+        ok: true,
+        groups: catalog.flatMap((item) => item.kind === 'group' ? [item.group] : []).filter((g) => g.models.length > 0),
+        failures: catalog.flatMap((item) => item.kind === 'failure' ? [item.failure] : [])
+      }
+    } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
+  }
+
+  // 当前模型 + 推理强度
+  async getModelSelection() {
+    try {
+      const dm = this.ctx.get('agentDefaultModel')
+      if (!dm || typeof dm.currentSelection !== 'function') return { ok: false, error: '模型服务不可用' }
+      const sel = dm.currentSelection()
+      return { ok: true, provider: sel.provider, model: sel.model, reasoningEffort: sel.reasoningEffort ? String(sel.reasoningEffort) : '' }
+    } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
+  }
+
+  // 切换模型 + 推理强度（与电脑端同步，写同一 settings）
+  async setModelSelection(args) {
+    try {
+      const dm = this.ctx.get('agentDefaultModel')
+      if (!dm || typeof dm.saveSelection !== 'function') return { ok: false, error: '模型服务不可用' }
+      const provider = args && args.provider
+      const model = args && args.model
+      const reasoningEffort = args && args.reasoningEffort
+      if (!provider || !model) return { ok: false, error: '参数缺失' }
+      await dm.saveSelection({ provider, model, ...(reasoningEffort ? { reasoningEffort } : {}) })
+      return { ok: true }
+    } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
+  }
+
+  // 语音转文字（智谱 GLM-ASR-2512，wav/mp3 base64）
+  async speechToText(args) {
+    try {
+      const b64 = args && args.audio
+      if (!b64) return { ok: false, error: '无音频数据' }
+      if (!visionKey) return { ok: false, error: '未配置智谱 Key（设置 → 识图/语音）' }
+      const raw = String(b64).replace(/^data:[^;]*;base64,/, '')
+      const res = await fetch('https://open.bigmodel.cn/api/paas/v4/audio/transcriptions', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + visionKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file_base64: raw, model: 'glm-asr-2512' })
+      })
+      const t = await res.text()
+      if (res.status !== 200) {
+        let msg = '语音识别失败（HTTP ' + res.status + '）'
+        try { const b = JSON.parse(t); if (b && b.error && b.error.message) msg = String(b.error.message) } catch (e) {}
+        return { ok: false, error: msg }
+      }
+      let text = ''
+      try { text = (JSON.parse(t)).text || '' } catch (e) {}
+      return { ok: true, text }
+    } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
+  }
+
   async getWallpaper() {
     const cfg = await this.readJsonFile(CONFIG_PATH)
     const w = cfg.wallpaper || {}
@@ -975,7 +1052,7 @@ function startRemoteControl(ctx, svc) {
             if (existsSync(file) && !rel.includes('..')) { res.writeHead(200, { 'Content-Type': mime }); res.end(readFileSync(file)); return }
             return rcJson(res, { ok: false, error: 'not found' }, 404)
           }
-          if (api === '/api/status') return rcJson(res, { ok: true, version: '6.1.0', paired: !!rcCode })
+          if (api === '/api/status') return rcJson(res, { ok: true, version: '6.2.0', paired: !!rcCode })
           if (api === '/api/pair') {
             if (parsed.code === rcCode) return rcJson(res, { ok: true, token: rcToken })
             return rcJson(res, { ok: false, error: '配对码错误' }, 401)

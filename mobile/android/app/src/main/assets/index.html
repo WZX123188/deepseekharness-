@@ -200,6 +200,7 @@ a.dl{color:var(--blue);text-decoration:none;font-size:15px;padding:8px 4px}
   </div>
   <div id="setView" style="flex:1;display:none;overflow-y:auto">
     <main>
+      <div class="card"><h2>🧠 模型与推理强度</h2><div class="muted" style="margin-bottom:6px">与电脑端同步，切换后新对话生效。</div><div id="modelBox"><div class="muted">加载中…</div></div></div>
       <div class="card"><h2>💰 余额 / 用量</h2><div id="balanceBox"><div class="muted">加载中…</div></div></div>
       <div class="card"><h2>🖼 识图（视图模式）</h2><div class="muted">智谱视觉 Key（开头无固定格式，保存后与电脑端同步）。</div><input id="visionKey" placeholder="粘贴智谱 API Key"><button class="bigbtn" onclick="saveVision()">保存 Key</button><div id="visionMsg" class="muted" style="margin-top:8px"></div></div>
       <div class="card"><h2>🔒 权限模式</h2><div class="muted">敏感操作（写/改/删文件）是否需确认，与电脑端同步。</div><button class="bigbtn" id="permToggle" onclick="togglePerm()">加载中…</button></div>
@@ -10384,10 +10385,22 @@ var scanStream = null, scanTimer = null;
 function startScan(){
   if(!window.jsQR){ alert('扫码组件未加载，请刷新页面或改用手机浏览器'); return; }
   if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ alert('当前浏览器/WebView 不支持摄像头'); return; }
-  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false }).then(function(stream){
+  // 像微信扫码：后置摄像头 + 高清 + 连续自动对焦
+  var constraints = { audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } } };
+  var sc = null; try { sc = (navigator.mediaDevices.getSupportedConstraints) ? navigator.mediaDevices.getSupportedConstraints() : null; } catch(e){}
+  if(sc && sc.focusMode){ constraints.video.focusMode = 'continuous'; }
+  navigator.mediaDevices.getUserMedia(constraints).then(function(stream){
     scanStream = stream;
     var v = $('scanVideo');
     v.srcObject = stream; v.play();
+    // 强制连续对焦（部分安卓 WebView/浏览器支持）
+    try {
+      var track = stream.getVideoTracks()[0];
+      var caps = track.getCapabilities ? track.getCapabilities() : null;
+      if(caps && caps.focusMode && caps.focusMode.indexOf('continuous') >= 0){
+        track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(function(){});
+      }
+    } catch(e){}
     $('scanMask').style.display = 'flex';
     var canvas = document.createElement('canvas');
     var ctx = canvas.getContext('2d', { willReadFrequently: true });
@@ -10473,15 +10486,16 @@ function newSession(){
     else alert((j&&j.error)||'新建失败');
   });
 }
-// 手机收件箱：agent 发给手机的文件（显示为可下载卡片，去重避免重复）
+// 手机收件箱：agent 发给手机的文件（显示为可下载卡片，去重避免重复；cb 在渲染完成后回调）
 var renderedFiles = {};
-function loadFiles(){
+function loadFiles(cb){
   rpc('listPhoneInbox').then(function(j){
-    if(!j||!j.ok) return;
-    (j.files||[]).forEach(function(f){
-      if(f && f.name && !renderedFiles[f.name]){ renderedFiles[f.name]=1; renderMsg({role:'file', name:f.name, path:f.path}); }
-    });
-  });
+    if(j && j.ok){
+      (j.files||[]).forEach(function(f){
+        if(f && f.name && !renderedFiles[f.name]){ renderedFiles[f.name]=1; renderMsg({role:'file', name:f.name, path:f.path}); }
+      });
+    }
+  }).catch(function(){}).then(function(){ if(cb) cb(); });
 }
 
 // 多轮对话：按当前会话读消息流
@@ -10493,7 +10507,7 @@ function refreshChat(appendOnly){
   fetchChat().then(function(j){
     if(!j||!j.ok) return;
     var msgs = j.messages || [];
-    if(!appendOnly){ $('chatBox').innerHTML=''; loadFiles(); msgs.forEach(renderMsg); }
+    if(!appendOnly){ $('chatBox').innerHTML=''; loadFiles(function(){ msgs.forEach(renderMsg); }); }
     else { for(var i=lastMsgCount; i<msgs.length; i++) renderMsg(msgs[i]); }
     lastMsgCount = msgs.length;
     saveChatLocal(msgs);
@@ -10743,7 +10757,41 @@ function copyAddr(t){
   function fallback(){ var ta=document.createElement('textarea'); ta.value=t; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.focus(); ta.select(); try{ document.execCommand('copy'); done(); }catch(e){ alert('复制失败，请手动复制：'+t); } document.body.removeChild(ta); }
   if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(t).then(done,function(){ fallback(); }); } else fallback();
 }
-function refreshSettings(){ loadBalance(); loadVision(); loadPerm(); loadUpdate(); loadWallpaper(); loadRemoteInfo(); }
+function loadModels(){
+  rpc('listModels').then(function(j){
+    if(!j||!j.ok){ $('modelBox').innerHTML='<div class="muted">'+(j&&j.error||'加载失败')+'</div>'; return; }
+    rpc('getModelSelection').then(function(sel){
+      var cur = (sel&&sel.ok) ? (sel.provider+'/'+sel.model) : '';
+      var curEffort = (sel&&sel.ok) ? sel.reasoningEffort : '';
+      var h='';
+      (j.groups||[]).forEach(function(g){
+        h+='<div style="font-weight:600;margin:10px 0 4px;font-size:14px">'+esc(g.name)+'</div>';
+        (g.models||[]).forEach(function(m){
+          var on = (cur === (g.id+'/'+m.id));
+          h+='<div class="market-item" style="padding:10px"><div style="display:flex;justify-content:space-between;align-items:center"><div style="flex:1"><div class="nm">'+esc(m.name)+(on?' <span style="color:#30a46c;font-size:13px">✓ 当前</span>':'')+'</div>'+(m.description?'<div class="pk">'+esc(m.description)+'</div>':'')+'</div></div>';
+          if(m.reasoning && m.reasoning.efforts && m.reasoning.efforts.length){
+            h+='<div class="market-acts">';
+            m.reasoning.efforts.forEach(function(e){
+              var eon = (on && curEffort === e.id);
+              h+='<button class="minibtn'+(eon?'':' ghost')+'" onclick="setModel(\''+g.id+'\',\''+m.id+'\',\''+e.id+'\')">'+esc(e.name)+(eon?' ✓':'')+'</button>';
+            });
+            h+='</div>';
+          } else {
+            h+='<button class="minibtn'+(on?'':' ghost')+'" onclick="setModel(\''+g.id+'\',\''+m.id+'\',\'\')">'+(on?'当前模型':'使用此模型')+'</button>';
+          }
+          h+='</div>';
+        });
+      });
+      $('modelBox').innerHTML=h||'<div class="muted">无可用模型</div>';
+    });
+  });
+}
+function setModel(provider, model, effort){
+  rpc('setModelSelection',{provider:provider, model:model, reasoningEffort:effort||undefined}).then(function(j){
+    if(j&&j.ok) loadModels(); else alert((j&&j.error)||'切换失败');
+  });
+}
+function refreshSettings(){ loadBalance(); loadVision(); loadPerm(); loadUpdate(); loadWallpaper(); loadRemoteInfo(); loadModels(); }
 
 function parentOf(p){ var i=p.lastIndexOf('\\'); if(i<0)i=p.lastIndexOf('/'); return i>0?p.slice(0,i):''; }
 function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }

@@ -191,64 +191,69 @@ window.__ModuleLoader__.load({
         el("input", { ref: fileRef, type: "file", multiple: true, accept: ".docx,.xlsx,.pptx,.pdf,.txt,.md,.csv,.json,.log", style: { display: "none" }, onChange: onChange }))
     }
 
-    // ===== 语音输入（v5.1.0）：麦克风图标 → 语音转文字 → 填入输入框 =====
-    function startVoice(onResult, onError, onEnd) {
-      var SR = null
-      try { SR = (typeof window !== "undefined") && (window.SpeechRecognition || window.webkitSpeechRecognition) } catch (e) { SR = null }
-      if (!SR) { if (onError) onError("当前环境不支持语音识别，请用手机端语音"); return null }
-      var rec = null
-      try { rec = new SR() } catch (e) { if (onError) onError("语音识别初始化失败，请用手机端语音"); return null }
-      rec.lang = "zh-CN"
-      rec.interimResults = false
-      rec.maxAlternatives = 1
-      var ended = false
-      function finish() { if (ended) return; ended = true; if (onEnd) onEnd() }
-      rec.onresult = function (e) {
-        try { var t = e.results && e.results[0] && e.results[0][0] && e.results[0][0].transcript; if (t && onResult) onResult(t) } catch (e2) {}
+    // ===== 语音输入：getUserMedia 录音 WAV → 智谱 ASR（Electron 里 Web Speech 不可用，改走后端）=====
+    function encodeWavBase64(samples, sampleRate) {
+      var buffer = new ArrayBuffer(44 + samples.length * 2)
+      var view = new DataView(buffer)
+      function ws(off, s) { for (var i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i)) }
+      ws(0, "RIFF"); view.setUint32(4, 36 + samples.length * 2, true); ws(8, "WAVE")
+      ws(12, "fmt "); view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true)
+      view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * 2, true); view.setUint16(32, 2, true); view.setUint16(34, 16, true)
+      ws(36, "data"); view.setUint32(40, samples.length * 2, true)
+      var off = 44
+      for (var i = 0; i < samples.length; i++, off += 2) { var s = Math.max(-1, Math.min(1, samples[i])); view.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true) }
+      var bytes = new Uint8Array(buffer), bin = ""
+      for (var j = 0; j < bytes.length; j++) bin += String.fromCharCode(bytes[j])
+      return btoa(bin)
+    }
+    function createRecorder(onDone, onError) {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { onError("当前环境不支持录音"); return null }
+      var rec = { stream: null, ctx: null, chunks: [], stopped: false, sampleRate: 44100 }
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+        rec.stream = stream
+        if (rec.stopped) { rec.finish(); return }
+        try {
+          var AC = window.AudioContext || window.webkitAudioContext
+          rec.ctx = new AC(); rec.sampleRate = rec.ctx.sampleRate || 44100
+          var src = rec.ctx.createMediaStreamSource(stream)
+          var proc = rec.ctx.createScriptProcessor(4096, 1, 1)
+          proc.onaudioprocess = function (e) { if (!rec.stopped) rec.chunks.push(new Float32Array(e.inputBuffer.getChannelData(0))) }
+          src.connect(proc); proc.connect(rec.ctx.destination)
+        } catch (e) {}
+      }).catch(function (e) { onError("无法打开麦克风：" + ((e && e.message) || e)) })
+      rec.finish = function () {
+        if (rec.finished) return; rec.finished = true
+        rec.stopped = true
+        try { if (rec.stream) rec.stream.getTracks().forEach(function (t) { t.stop() }) } catch (e) {}
+        try { if (rec.ctx) rec.ctx.close() } catch (e) {}
+        var total = 0; rec.chunks.forEach(function (c) { total += c.length })
+        if (total === 0) { onError("没有录到声音，请靠近麦克风重试"); return }
+        var pcm = new Float32Array(total), off = 0
+        rec.chunks.forEach(function (c) { pcm.set(c, off); off += c.length })
+        onDone(encodeWavBase64(pcm, rec.sampleRate))
       }
-      rec.onerror = function (e) {
-        var err = (e && e.error) || "语音识别失败"
-        if (err === "network" || err === "service-not-allowed" || err === "not-allowed") err = "电脑端语音识别服务不可用（Electron 环境限制），请用手机端语音"
-        if (onError) onError(err)
-        finish()
-      }
-      rec.onend = function () { finish() }
-      try { rec.start() } catch (e2) { if (onError) onError("无法启动麦克风，请用手机端语音"); finish() }
+      rec.stop = function () { rec.finish() }
       return rec
     }
-    // 语音输入：点击开始 → 再点击结束（stop 后取识别结果）
+    // 语音输入：点击开始 → 再点击结束（stop 后录音 → 智谱 ASR → 填入输入框）
     function VoiceInputButton() {
       var bs = React.useState(false); var busy = bs[0]; var setBusy = bs[1]
       var recRef = React.useRef(null)
       function toggle() {
         if (busy) {
-          // 结束：停止识别
           try { if (recRef.current) recRef.current.stop() } catch (e2) {}
-          recRef.current = null
-          setBusy(false)
           return
         }
         setBusy(true)
-        var rec = startVoice(
-          function (text) {
-            recRef.current = null
-            setBusy(false)
-            if (text) appendToComposer(text)
+        var rec = createRecorder(
+          function (wavB64) {
+            recRef.current = null; setBusy(false)
+            callHost("speechToText", { audio: wavB64 }).then(function (r) {
+              if (r && r.ok && r.text) appendToComposer(r.text)
+              else alert("语音识别：" + ((r && r.error) || "失败"))
+            })
           },
-          function (err) {
-            recRef.current = null
-            setBusy(false)
-            alert("语音输入：" + err)
-          },
-          function () {
-            // 识别结束（stop 或自然结束），复位状态并恢复输入框焦点（避免光标消失）
-            recRef.current = null
-            setBusy(false)
-            try {
-              var ta = document.querySelector("[data-composer-seat] textarea")
-              if (ta) ta.focus()
-            } catch (e2) {}
-          }
+          function (err) { recRef.current = null; setBusy(false); alert("语音输入：" + err) }
         )
         recRef.current = rec
         if (!rec) setBusy(false)
