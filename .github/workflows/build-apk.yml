@@ -25,14 +25,6 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Generate keystore (self-signed)
-        working-directory: mobile/android
-        run: |
-          keytool -genkeypair -v -keystore release.keystore -alias dshclient \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass dshclient2024 -keypass dshclient2024 \
-            -dname "CN=DSHClient, OU=Dev, O=DSH, L=City, S=State, C=CN"
-
       - name: Build APK
         working-directory: mobile/android
         env:
