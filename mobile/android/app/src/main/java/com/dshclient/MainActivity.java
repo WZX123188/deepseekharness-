@@ -98,13 +98,19 @@ public class MainActivity extends Activity {
         webView.loadUrl("file:///android_asset/index.html");
 
         // 下载完成广播 → 用 DownloadManager 的 content URI 直接打开
-        registerReceiver(new BroadcastReceiver() {
+        BroadcastReceiver downloadReceiver = new BroadcastReceiver() {
             @Override
             public void onReceive(Context context, Intent intent) {
                 long id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1);
                 if (id >= 0) openDownloaded(id);
             }
-        }, new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE));
+        };
+        IntentFilter downloadFilter = new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(downloadReceiver, downloadFilter, Context.RECEIVER_NOT_EXPORTED);
+        } else {
+            registerReceiver(downloadReceiver, downloadFilter);
+        }
 
         if (Build.VERSION.SDK_INT >= 23) {
             ArrayList<String> need = new ArrayList<>();
