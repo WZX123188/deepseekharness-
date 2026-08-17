@@ -112,7 +112,9 @@ a.dl{color:var(--blue);text-decoration:none;font-size:15px;padding:8px 4px}
   <div id="setView" style="flex:1;display:none;overflow-y:auto">
     <main>
       <div class="card"><h2>💰 余额 / 用量</h2><div id="balanceBox"><div class="muted">加载中…</div></div></div>
-      <div class="card"><h2>🖼 识图（视图模式）</h2><div class="muted">智谱视觉 Key（开头无固定格式）。</div><input id="visionKey" placeholder="粘贴智谱 API Key"><button class="bigbtn" onclick="saveVision()">保存 Key</button><div id="visionMsg" class="muted" style="margin-top:8px"></div></div>
+      <div class="card"><h2>🖼 识图（视图模式）</h2><div class="muted">智谱视觉 Key（开头无固定格式，保存后与电脑端同步）。</div><input id="visionKey" placeholder="粘贴智谱 API Key"><button class="bigbtn" onclick="saveVision()">保存 Key</button><div id="visionMsg" class="muted" style="margin-top:8px"></div></div>
+      <div class="card"><h2>🔒 权限模式</h2><div class="muted">敏感操作（写/改/删文件）是否需确认，与电脑端同步。</div><button class="bigbtn" id="permToggle" onclick="togglePerm()">加载中…</button></div>
+      <div class="card"><h2>🔄 检查更新</h2><div id="updateBox"><div class="muted">加载中…</div></div></div>
       <div class="card"><h2>🔌 连接</h2><button class="bigbtn ghost" onclick="switchServer()">切换服务器</button></div>
     </main>
   </div>
@@ -141,7 +143,7 @@ function load(){
   if(server && token){
     $('server').value=server;
     fetch('http://'+server+'/api/status',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})
-      .then(function(r){return r.json()}).then(function(j){ if(j&&j.ok){ showMain(); loadBalance(); loadVision(); } else showPair('连接失败，请重新输入'); })
+      .then(function(r){return r.json()}).then(function(j){ if(j&&j.ok){ showMain(); refreshSettings(); refreshChat(false); } else showPair('连接失败，请重新输入'); })
       .catch(function(){ showPair('无法连接 '+server+'，请重新输入地址和配对码'); });
   } else showPair('');
 }
@@ -152,7 +154,7 @@ function doPair(){
   fetch('http://'+server+'/api/pair',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:code})})
     .then(function(r){return r.json()})
     .then(function(j){
-      if(j&&j.ok&&j.token){ token=j.token; localStorage.setItem('dsh_server',server); localStorage.setItem('dsh_token',token); $('pairMsg').textContent=''; showMain(); loadBalance(); loadVision(); addAi('已连接电脑 ✓'); }
+      if(j&&j.ok&&j.token){ token=j.token; localStorage.setItem('dsh_server',server); localStorage.setItem('dsh_token',token); $('pairMsg').textContent=''; showMain(); refreshSettings(); refreshChat(false); }
       else $('pairMsg').textContent='连接失败：'+(j&&j.error||'未知');
     }).catch(function(e){ $('pairMsg').textContent='无法连接：'+e.message });
 }
@@ -167,10 +169,35 @@ function showTab(t){
 }
 function addMsg(text,cls){ var d=document.createElement('div'); d.className='msg '+cls; d.textContent=text; $('chatBox').appendChild(d); $('chatBox').scrollTop=$('chatBox').scrollHeight; }
 function addAi(t){ addMsg(t,'ai'); }
-function sendMsg(){ var t=$('input').value.trim(); if(!t) return; addMsg(t,'me'); $('input').value=''; api('/api/chat/send',{text:t}).then(function(j){ if(!j||!j.ok) addAi('发送失败：'+(j&&j.error||'')); pollReply(); }); }
 
+// 多轮对话：读电脑活动会话的完整消息流，本地渲染（user=我，assistant=AI）
+var lastMsgCount = 0;
+function refreshChat(appendOnly){
+  rpc('getChatMessages').then(function(j){
+    if(!j||!j.ok) return;
+    var msgs = j.messages || [];
+    if(!appendOnly){ $('chatBox').innerHTML=''; msgs.forEach(function(m){ addMsg(m.text, m.role==='user'?'me':'ai'); }); }
+    else { for(var i=lastMsgCount; i<msgs.length; i++) addMsg(msgs[i].text, msgs[i].role==='user'?'me':'ai'); }
+    lastMsgCount = msgs.length;
+  });
+}
+function sendMsg(){
+  var t=$('input').value.trim(); if(!t) return;
+  addMsg(t,'me'); $('input').value=''; lastMsgCount++;
+  api('/api/chat/send',{text:t}).then(function(j){ if(!j||!j.ok) addAi('发送失败：'+(j&&j.error||'')); pollChat(); });
+}
 var pollTimer=null;
-function pollReply(){ clearInterval(pollTimer); var n=0; pollTimer=setInterval(function(){ api('/api/chat/poll',{}).then(function(j){ if(j&&j.ok&&j.reply){ addAi(j.reply); clearInterval(pollTimer); } else if(++n>40){ clearInterval(pollTimer); } }); },2500); }
+function pollChat(){
+  clearInterval(pollTimer); var idle=0;
+  pollTimer=setInterval(function(){
+    rpc('getChatMessages').then(function(j){
+      if(!j||!j.ok) return;
+      var msgs = j.messages || [];
+      if(msgs.length > lastMsgCount){ for(var i=lastMsgCount;i<msgs.length;i++) addMsg(msgs[i].text, msgs[i].role==='user'?'me':'ai'); lastMsgCount=msgs.length; idle=0; }
+      else { idle++; if(idle>6) clearInterval(pollTimer); } // 连续无新消息约15秒后停
+    });
+  },2500);
+}
 
 function toggleVoice(){
   var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -179,7 +206,7 @@ function toggleVoice(){
   var rec = new SR(); rec.lang='zh-CN'; rec.interimResults=false;
   rec.onresult=function(e){ try{ var t=e.results[0][0].transcript; if(t) $('input').value += t; }catch(err){} };
   rec.onerror=function(){ $('voiceBtn').textContent='🎤'; voiceRec=null; alert('语音识别失败，请检查麦克风权限'); };
-  rec.onend=function(){ $('voiceBtn').textContent='🎤'; voiceRec=null; };
+  rec.onend=function(){ $('voiceBtn').textContent='🎤'; voiceRec=null; try{$('input').focus();}catch(e){} };
   try{ rec.start(); voiceRec=rec; $('voiceBtn').textContent='⏹'; }catch(err){ alert('无法启动麦克风，请授权'); }
 }
 
@@ -214,6 +241,10 @@ function listDir(p){
 function loadBalance(){ rpc('deepseekBalance').then(function(j){ if(j&&j.ok){ try{ var b=JSON.parse(j.body); var infos=b.balance_infos||[]; var h=''; infos.forEach(function(i){ h+='<div class="row"><span class="lbl">'+(i.currency||'')+' 余额</span><span class="val">'+(i.total_balance||'0')+'</span></div>'; }); $('balanceBox').innerHTML=h||'<div class="muted">未返回余额</div>'; } catch(e){ $('balanceBox').innerHTML='<div class="muted">解析失败</div>'; } } else $('balanceBox').innerHTML='<div class="muted">'+(j&&j.error||'查询失败')+'</div>'; }); }
 function loadVision(){ rpc('getVisionStatus').then(function(j){ if(j&&j.ok&&j.configured){ $('visionKey').placeholder='已配置（留空则不变）'; } }); }
 function saveVision(){ var k=$('visionKey').value.trim(); if(!k){ $('visionMsg').textContent='请输入 Key'; return; } rpc('setVisionKey',{key:k}).then(function(j){ $('visionMsg').textContent = (j&&j.ok)?'已保存 ✓':'失败：'+(j&&j.error||''); $('visionKey').value=''; loadVision(); }); }
+function loadPerm(){ rpc('getPermissionMode').then(function(j){ if(j&&j.ok){ $('permToggle').textContent = (j.mode==='trust') ? '当前：完全信任 ✓（点击改为需确认）' : '当前：敏感操作需确认（点击改为完全信任）'; } }); }
+function togglePerm(){ rpc('getPermissionMode').then(function(j){ var next=(j&&j.mode==='trust')?'ask':'trust'; rpc('setPermissionMode',{mode:next}).then(function(){ loadPerm(); }); }); }
+function loadUpdate(){ rpc('checkUpdate').then(function(j){ if(j&&j.ok){ var o=j.official||{}; var g=j.github||{}; $('updateBox').innerHTML='<div class="row"><span class="lbl">官方版本</span><span class="val">'+(o.latest||'?')+'</span></div><div class="row"><span class="lbl">GitHub 最新</span><span class="val">'+(g.tag||'无')+'</span></div>'; } else $('updateBox').innerHTML='<div class="muted">'+(j&&j.error||'查询失败')+'</div>'; }); }
+function refreshSettings(){ loadBalance(); loadVision(); loadPerm(); loadUpdate(); }
 
 function parentOf(p){ var i=p.lastIndexOf('\\'); if(i<0)i=p.lastIndexOf('/'); return i>0?p.slice(0,i):''; }
 function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }

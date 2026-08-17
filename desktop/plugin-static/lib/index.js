@@ -541,6 +541,40 @@ export class DshClientFeaturesService extends TypertRemoteService {
     return { ok: true, port: RC_PORT, code: rcCode, ips }
   }
 
+  // 多轮对话：读取当前活动 agent 会话的消息流（用户消息 + 助手回复），供手机端展示完整对话
+  async getChatMessages() {
+    try {
+      let events = []
+      try { events = (latestAgent && latestAgent.session && latestAgent.session.events) || [] } catch (e) {}
+      if (!events.length) {
+        try {
+          const sessions = this.ctx.get('sessions')
+          if (sessions && typeof sessions.list === 'function') {
+            const list = sessions.list()
+            if (list && list.length) {
+              const s = list[list.length - 1]
+              if (s && s.events) events = s.events
+            }
+          }
+        } catch (e) {}
+      }
+      const msgs = []
+      for (const ev of events) {
+        if (!ev || !ev.data) continue
+        if (ev.type === 'user/message') {
+          const parts = ev.data.content || []
+          const txt = parts.map((c) => (c && typeof c.text === 'string') ? c.text : '').join(' ').trim()
+          if (txt && txt.indexOf('【自动续跑检查】') !== 0) msgs.push({ role: 'user', text: txt })
+        } else if (ev.type === 'assistant/message') {
+          const parts = ev.data.content || []
+          const txt = parts.map((c) => (c && typeof c.text === 'string') ? c.text : '').join(' ').trim()
+          if (txt) msgs.push({ role: 'assistant', text: txt })
+        }
+      }
+      return { ok: true, messages: msgs }
+    } catch (e) { return { ok: false, error: String((e && e.message) || e) } }
+  }
+
   async getWallpaper() {
     const cfg = await this.readJsonFile(CONFIG_PATH)
     const w = cfg.wallpaper || {}
@@ -798,9 +832,9 @@ function startRemoteControl(ctx) {
         try { parsed = body ? JSON.parse(body) : {} } catch (e) {}
         const token = parsed.token || url.searchParams.get('token') || ''
         try {
-          // 手机网页静态文件（PWA）：http://IP:3191/mobile
+          // 手机网页静态文件（PWA）：http://IP:3191 或 /mobile 都进网页（根路径避免弹「未授权」JSON）
           let staticPath = api
-          if (staticPath === '/mobile' || staticPath === '/mobile/') staticPath = '/mobile/index.html'
+          if (staticPath === '/' || staticPath === '/mobile' || staticPath === '/mobile/') staticPath = '/mobile/index.html'
           if (staticPath.indexOf('/mobile/') === 0) {
             const rel = staticPath.slice('/mobile/'.length) || 'index.html'
             const mime = rel.endsWith('.html') ? 'text/html; charset=utf-8' : rel.endsWith('.json') ? 'application/json' : rel.endsWith('.png') ? 'image/png' : 'application/octet-stream'
@@ -817,14 +851,16 @@ function startRemoteControl(ctx) {
           if (api === '/api/chat/send') {
             const text = String(parsed.text || '')
             if (!text.trim()) return rcJson(res, { ok: false, error: '消息为空' })
-            writeFileSync(rcInboxFile(), text)
+            // 多轮对话：手机消息作为普通用户消息注入活动 agent 会话（原文），agent 回复也留在会话里，
+            // 手机端通过 getChatMessages 读完整对话流，实现连续对话。
             if (latestAgent && typeof latestAgent.inject === 'function') {
               latestAgent.inject(createUserMessage({
-                content: [{ type: 'text', text: '【手机远程指令】' + text + '\n\n执行完成后，请把结果覆盖写入文件：' + rcReplyFile() + '（纯文本），手机端会读取该文件作为回复。' }],
+                content: [{ type: 'text', text: text }],
                 source: { kind: 'plugin', plugin: 'dsh-client-static' }
               }))
               return rcJson(res, { ok: true, delivered: true })
             }
+            writeFileSync(rcInboxFile(), text)
             return rcJson(res, { ok: true, delivered: false, error: '电脑端无活动会话，暂存于收件箱' })
           }
           if (api === '/api/chat/poll') {

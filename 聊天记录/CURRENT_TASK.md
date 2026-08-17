@@ -4,20 +4,23 @@
 
 ## 状态：无任务 / 已完成
 
-（全部任务完成，2026-08-17 凌晨。成果汇总见下。）
+### 已完成成果（v5.2.0）
+- ① 峰谷定价默认开启（usage-meter peakEnabled:true + 修 readJsonFile/writeJsonFile 用 fs）
+- ② Tailscale 引导页（是什么/为什么/5 步，PWA 首次启动显示）
+- ③④ 手机独立移动 UI（三 tab：对话/文件/设置，大按钮防误触）+ 上传文件 + 实时同步（轮询）+ 共用电脑后端
+- ⑤ 客户端图标换小蓝鲸（deepseek-whale.ico → desktop\icon.ico + resources）
+- ⑥ 局域网连不上（中文冒号纠错 normalizeAddr + main.js allowFirewall 放行 3180/3191/3192）+ 网页版无连接页（连接测试失败回配对页 + 切换服务器按钮）
+- ⑦ 语音点击开始→再点击结束（toggle + stop + onend）
+- 打包 5.2.0 便携版；git commit + tag v5.2.0 + push（main + tag 都上传，5.1.1~5.1.5 改动随 main 一起传）
+- 本地 release 只留最新（5.2.0）
 
-### 已完成成果
-- **v4.0.0**：视图（官网首页/密钥/模型回退）+ 拖拽附件（图标卡片/本地缓存路径）实测通过；便携版 + git tag。
-- **v5.0.0**：手机远程 App——电脑端 3191 远程服务（配对码+token 认证）+ PWA + 安卓 WebView（GitHub Actions 云构建 APK）+ 文件浏览/下载 + 指令桥接 + 免费隧道（局域网/Tailscale）。
-- **v5.1.0**：语音转文字（电脑+手机麦克风图标+权限）。
-- **GitHub**：`WZX123188/deepseekharness-` —— main + tag v4.0.0/v5.0.0/v5.1.0 已 push；v5.1.0 release 含 `DSHClient-5.1.0.apk`（云构建成功）。便携版 zip 上传因网络 186MB 超时失败（本地 G:\dsh客户端\desktop\release 有）。
-- **本地产物**：`G:\dsh客户端\desktop\release\DeepSeekClient-portable-{4.0.0,5.0.0,5.1.0}-win-x64.zip`；`G:\dsh客户端\mobile\`（PWA + 安卓项目源码）。
+### 待办（下次继续）
+- App（安卓 APK）图标换小蓝鲸（ico→png + mipmap，AndroidManifest 当前用系统默认图标）
+- 手机端多轮对话（当前是单轮指令+回复，历史消息本地维护）
+- 移动端剩余设置项（权限模式、市场、壁纸等，按需加）
 
-### 明天验收要点
-1. APK：GitHub → Releases → v5.1.0 → 下载 `DSHClient-5.1.0.apk` → 手机文件管理器安装（允许"未知来源"）。
-2. 苹果/无安装：手机浏览器开 `http://<电脑IP>:3191/mobile` → 添加到主屏幕。
-3. 连接：电脑客户端 → 设置 →「手机远程」→ 记配对码 + 地址 → 手机输入连接。
-4. 语音：聊天框麦克风图标（电脑端 + 手机端）。
-
-### 关机说明
-按用户授权"做完所有任务后关闭自己并关机"，已执行 `shutdown /s`。
+### 验收要点
+- 手机连电脑：电脑客户端「手机远程」看地址+配对码 → 手机装 APK 或开 http://IP:3191/mobile → 输地址+配对码
+- 局域网：同 WiFi 直连；跨网：Tailscale（两端装+同账号）
+- 语音：点 🎤 开始，再点 ⏹ 结束
+- 图标：客户端是小蓝鲸

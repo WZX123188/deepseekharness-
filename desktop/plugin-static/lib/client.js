@@ -228,9 +228,13 @@ window.__ModuleLoader__.load({
             alert("语音输入：" + err)
           },
           function () {
-            // 识别结束（stop 或自然结束），复位状态
+            // 识别结束（stop 或自然结束），复位状态并恢复输入框焦点（避免光标消失）
             recRef.current = null
             setBusy(false)
+            try {
+              var ta = document.querySelector("[data-composer-seat] textarea")
+              if (ta) ta.focus()
+            } catch (e2) {}
           }
         )
         recRef.current = rec
@@ -262,19 +266,43 @@ window.__ModuleLoader__.load({
       var st = React.useState(null); var info = st[0]; var setInfo = st[1]
       function load() { callHost("getRemoteInfo").then(function (res) { if (res && res.ok) setInfo(res) }).catch(function () {}) }
       React.useEffect(function () { load() }, [])
+      function copyText(t) {
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(t).then(function () { alert("已复制：\n" + t) }).catch(function () { fallbackCopy(t) })
+          } else fallbackCopy(t)
+        } catch (e) { fallbackCopy(t) }
+      }
+      function fallbackCopy(t) {
+        try {
+          var ta = document.createElement("textarea")
+          ta.value = t
+          ta.style.position = "fixed"; ta.style.opacity = "0"
+          document.body.appendChild(ta)
+          ta.focus(); ta.select()
+          document.execCommand("copy")
+          document.body.removeChild(ta)
+          alert("已复制：\n" + t)
+        } catch (e2) { alert("复制失败，请手动复制：\n" + t) }
+      }
       return el("div", { className: "dsh-page" },
         el("div", { className: "dsh-head" }, el("h2", { className: "dsh-h2" }, "📱 手机远程"), el("button", { className: "dsh-btn ghost", onClick: load }, "刷新")),
         el("div", { className: "dsh-card" },
           el("div", { className: "dsh-h2", style: { marginBottom: "10px" } }, "🔑 配对码"),
           info && info.code ? el("div", { style: { fontSize: "28px", fontWeight: 700, letterSpacing: "4px", color: "#4d6bfe" } }, info.code) : el("div", { className: "dsh-muted" }, "加载中…"),
-          el("div", { className: "dsh-note", style: { marginTop: "8px" } }, "手机端打开网页或 App，输入下方地址 + 这个配对码即可连接。")),
+          el("div", { className: "dsh-note", style: { marginTop: "8px" } }, "手机端打开下方网址，输入这个配对码即可连接。")),
         el("div", { className: "dsh-card" },
-          el("div", { className: "dsh-h2", style: { marginBottom: "8px" } }, "🌐 连接地址"),
-          info && info.ips && info.ips.length ? info.ips.map(function (ip) { return el("div", { key: ip, className: "dsh-value", style: { fontSize: "14px" } }, ip + ":" + (info.port || 3191)) }) : el("div", { className: "dsh-muted" }, "未检测到局域网地址"),
-          el("div", { className: "dsh-note", style: { marginTop: "8px", lineHeight: "1.7" } }, "· 同一 WiFi：手机直接连上面地址（局域网，私密）。" + "\n· 人在外：电脑和手机都装免费 Tailscale（组网即虚拟局域网，WireGuard 加密），连 Tailscale 分配的 IP 即可。")),
+          el("div", { className: "dsh-h2", style: { marginBottom: "8px" } }, "🌐 连接网址（点「复制」发到手机）"),
+          info && info.ips && info.ips.length ? info.ips.map(function (ip) {
+            var url = "http://" + ip + ":" + (info.port || 3191) + "/mobile"
+            return el("div", { key: ip, className: "dsh-row", style: { alignItems: "center" } },
+              el("span", { className: "dsh-value", style: { fontSize: "13px", wordBreak: "break-all", flex: 1 } }, url),
+              el("button", { className: "dsh-btn ghost", onClick: function () { copyText(url) }, style: { padding: "6px 12px", fontSize: "13px", flex: "none" } }, "复制"))
+          }) : el("div", { className: "dsh-muted" }, "未检测到局域网地址"),
+          el("div", { className: "dsh-note", style: { marginTop: "8px", lineHeight: "1.7" } }, "· 同一 WiFi：手机浏览器直接打开上面网址（局域网，私密）。" + "\n· 人在外：装 Tailscale 后，用 Tailscale 的 IP 替换网址里的 IP 即可（如 http://100.x.x.x:3191/mobile）。")),
         el("div", { className: "dsh-card" },
           el("div", { className: "dsh-h2", style: { marginBottom: "8px" } }, "📥 手机端安装"),
-          el("div", { className: "dsh-muted", style: { lineHeight: "1.8" } }, "· 安卓：GitHub Release 下载 APK 安装（或直接用浏览器打开网页）。" + "\n· 苹果：Safari 打开网页 → 分享 → 添加到主屏幕。" + "\n· 网页地址：http://<上面地址>/mobile（电脑端自动提供）。")))
+          el("div", { className: "dsh-muted", style: { lineHeight: "1.8" } }, "· 安卓：GitHub Release 下载 APK 安装（或直接用浏览器打开网址）。" + "\n· 苹果：Safari 打开网址 → 分享 → 添加到主屏幕。")))
     }
 
     function BalanceSection() {

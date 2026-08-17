@@ -68,5 +68,7 @@ export const TYPERT = {
     direct('deleteAttachment', [argsParam()]),
     // v5.0.0 手机远程信息（配对码+端口+本机IP）
     direct('getRemoteInfo'),
+    // v5.3.0 多轮对话：读取活动会话消息流
+    direct('getChatMessages'),
   ],
 }
